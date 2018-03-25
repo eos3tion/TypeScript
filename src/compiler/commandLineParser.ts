@@ -673,6 +673,31 @@ namespace ts {
                 type: "object"
             },
             description: Diagnostics.List_of_language_service_plugins
+        },
+
+        /*-------------tsplus---------------- */
+        {
+            name: "accessorOptimization",
+            type: "boolean"
+        },
+        {
+            // this option can only be specified in tsconfig.json
+            // use type = object to copy the value as-is
+            name: "defines",
+            type: "object",
+            isTSConfigOnly: true
+        },
+        {
+            name: "emitReflection",
+            type: "boolean"
+        },
+        {
+            name: "noEmitJs",
+            type: "boolean"
+        },
+        {
+            name: "reorderFiles",
+            type: "boolean"
         }
     ];
 
@@ -1371,7 +1396,7 @@ namespace ts {
             for (let i = 0; i < nameColumn.length; i++) {
                 const optionName = nameColumn[i];
                 const description = descriptionColumn[i];
-                result.push(optionName && `${tab}${tab}${optionName}${ description && (makePadding(marginLength - optionName.length + 2) + description)}`);
+                result.push(optionName && `${tab}${tab}${optionName}${description && (makePadding(marginLength - optionName.length + 2) + description)}`);
             }
             if (fileNames.length) {
                 result.push(`${tab}},`);
@@ -1561,13 +1586,13 @@ namespace ts {
      * It does *not* resolve the included files.
      */
     function parseConfig(
-            json: any,
-            sourceFile: JsonSourceFile,
-            host: ParseConfigHost,
-            basePath: string,
-            configFileName: string,
-            resolutionStack: string[],
-            errors: Push<Diagnostic>,
+        json: any,
+        sourceFile: JsonSourceFile,
+        host: ParseConfigHost,
+        basePath: string,
+        configFileName: string,
+        resolutionStack: string[],
+        errors: Push<Diagnostic>,
     ): ParsedTsconfig {
         basePath = normalizeSlashes(basePath);
         const resolvedPath = getNormalizedAbsolutePath(configFileName || "", basePath);

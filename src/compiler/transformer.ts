@@ -1,6 +1,7 @@
 /// <reference path="visitor.ts" />
 /// <reference path="transformers/utilities.ts" />
 /// <reference path="transformers/ts.ts" />
+/// <reference path="transformers/tsPlus.ts" />
 /// <reference path="transformers/jsx.ts" />
 /// <reference path="transformers/esnext.ts" />
 /// <reference path="transformers/es2017.ts" />
@@ -46,6 +47,12 @@ namespace ts {
 
         addRange(transformers, customTransformers && customTransformers.before);
 
+        /*--------------tspuls---------------*/
+        if(compilerOptions.defines || compilerOptions.emitReflection){
+            transformers.push(transformTypeScriptPlus);
+        }
+        /*--------------tspuls---------------*/
+        
         transformers.push(transformTypeScript);
 
         if (jsx === JsxEmit.React) {

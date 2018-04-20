@@ -1,6 +1,7 @@
 /// <reference path="sys.ts" />
 /// <reference path="emitter.ts" />
 /// <reference path="core.ts" />
+/// <reference path="./sorting.ts" />
 
 namespace ts {
     const ignoreDiagnosticCommentRegEx = /(^\s*$)|(^\s*\/\/\/?\s*(@ts-ignore)?)/;
@@ -331,9 +332,9 @@ namespace ts {
 
                 output += formatColorAndReset(relativeFileName, ForegroundColorEscapeSequences.Cyan);
                 output += ":";
-                output += formatColorAndReset(`${ firstLine + 1 }`, ForegroundColorEscapeSequences.Yellow);
+                output += formatColorAndReset(`${firstLine + 1}`, ForegroundColorEscapeSequences.Yellow);
                 output += ":";
-                output += formatColorAndReset(`${ firstLineChar + 1 }`, ForegroundColorEscapeSequences.Yellow);
+                output += formatColorAndReset(`${firstLineChar + 1}`, ForegroundColorEscapeSequences.Yellow);
                 output += " - ";
             }
 
@@ -1088,6 +1089,8 @@ namespace ts {
                 writeFile: writeFileCallback || (
                     (fileName, data, writeByteOrderMark, onError, sourceFiles) => host.writeFile(fileName, data, writeByteOrderMark, onError, sourceFiles)),
                 isEmitBlocked,
+                /*---tsplus---*/
+                getTypeChecker: program.getTypeChecker,
             };
         }
 
@@ -1108,7 +1111,7 @@ namespace ts {
             // otherwise, using options specified in '--lib' instead of '--target' default library file
             const equalityComparer = host.useCaseSensitiveFileNames() ? equateStringsCaseSensitive : equateStringsCaseInsensitive;
             if (!options.lib) {
-               return equalityComparer(file.fileName, getDefaultLibraryFileName());
+                return equalityComparer(file.fileName, getDefaultLibraryFileName());
             }
             else {
                 return forEach(options.lib, libFileName => equalityComparer(file.fileName, combinePaths(defaultLibraryPath, libFileName)));

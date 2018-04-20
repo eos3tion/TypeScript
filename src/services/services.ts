@@ -1,37 +1,3 @@
-/// <reference path="..\compiler\program.ts"/>
-/// <reference path="..\compiler\commandLineParser.ts"/>
-
-/// <reference path='types.ts' />
-/// <reference path='utilities.ts' />
-/// <reference path='breakpoints.ts' />
-/// <reference path='classifier.ts' />
-/// <reference path='completions.ts' />
-/// <reference path='documentHighlights.ts' />
-/// <reference path='documentRegistry.ts' />
-/// <reference path='findAllReferences.ts' />
-/// <reference path='goToDefinition.ts' />
-/// <reference path='jsDoc.ts' />
-/// <reference path='jsTyping.ts' />
-/// <reference path='navigateTo.ts' />
-/// <reference path='navigationBar.ts' />
-/// <reference path='organizeImports.ts' />
-/// <reference path='outliningElementsCollector.ts' />
-/// <reference path='patternMatcher.ts' />
-/// <reference path='preProcess.ts' />
-/// <reference path='rename.ts' />
-/// <reference path='signatureHelp.ts' />
-/// <reference path='suggestionDiagnostics.ts' />
-/// <reference path='symbolDisplay.ts' />
-/// <reference path='transpile.ts' />
-/// <reference path='formatting\formatting.ts' />
-/// <reference path='formatting\smartIndenter.ts' />
-/// <reference path='textChanges.ts' />
-/// <reference path='codeFixProvider.ts' />
-/// <reference path='refactorProvider.ts' />
-/// <reference path='codefixes\fixes.ts' />
-/// <reference path='refactors\refactors.ts' />
-/// <reference path="sourcemaps.ts" />
-
 namespace ts {
     /** The version of the language service API */
     export const servicesVersion = "0.8";
@@ -431,9 +397,7 @@ namespace ts {
             return this.checker.getIndexTypeOfType(this, IndexKind.Number);
         }
         getBaseTypes(): BaseType[] | undefined {
-            return this.flags & TypeFlags.Object && this.objectFlags & (ObjectFlags.Class | ObjectFlags.Interface)
-                ? this.checker.getBaseTypes(<InterfaceType><Type>this)
-                : undefined;
+            return this.isClassOrInterface() ? this.checker.getBaseTypes(this) : undefined;
         }
         getNonNullableType(): Type {
             return this.checker.getNonNullableType(this);
@@ -443,6 +407,34 @@ namespace ts {
         }
         getDefault(): Type | undefined {
             return this.checker.getDefaultFromTypeParameter(this);
+        }
+
+        isUnion(): this is UnionType {
+            return !!(this.flags & TypeFlags.Union);
+        }
+        isIntersection(): this is IntersectionType {
+            return !!(this.flags & TypeFlags.Intersection);
+        }
+        isUnionOrIntersection(): this is UnionOrIntersectionType {
+            return !!(this.flags & TypeFlags.UnionOrIntersection);
+        }
+        isLiteral(): this is LiteralType {
+            return !!(this.flags & TypeFlags.Literal);
+        }
+        isStringLiteral(): this is StringLiteralType {
+            return !!(this.flags & TypeFlags.StringLiteral);
+        }
+        isNumberLiteral(): this is NumberLiteralType {
+            return !!(this.flags & TypeFlags.NumberLiteral);
+        }
+        isTypeParameter(): this is TypeParameter {
+            return !!(this.flags & TypeFlags.TypeParameter);
+        }
+        isClassOrInterface(): this is InterfaceType {
+            return !!(getObjectFlags(this) & ObjectFlags.ClassOrInterface);
+        }
+        isClass(): this is InterfaceType {
+            return !!(getObjectFlags(this) & ObjectFlags.Class);
         }
     }
 
@@ -653,8 +645,8 @@ namespace ts {
 
             function getDeclarationName(declaration: Declaration) {
                 const name = getNameOfDeclaration(declaration);
-                return name && (isPropertyNameLiteral(name) ? getTextOfIdentifierOrLiteral(name) :
-                    name.kind === SyntaxKind.ComputedPropertyName && isPropertyAccessExpression(name.expression) ? name.expression.name.text : undefined);
+                return name && (isComputedPropertyName(name) && isPropertyAccessExpression(name.expression) ? name.expression.name.text
+                    : isPropertyName(name) ? getNameFromPropertyName(name) : undefined);
             }
 
             function visit(node: Node): void {
@@ -1126,8 +1118,10 @@ namespace ts {
         };
     }
 
-    export function createLanguageService(host: LanguageServiceHost,
-        documentRegistry: DocumentRegistry = createDocumentRegistry(host.useCaseSensitiveFileNames && host.useCaseSensitiveFileNames(), host.getCurrentDirectory())): LanguageService {
+    export function createLanguageService(
+        host: LanguageServiceHost,
+        documentRegistry: DocumentRegistry = createDocumentRegistry(host.useCaseSensitiveFileNames && host.useCaseSensitiveFileNames(), host.getCurrentDirectory()),
+        syntaxOnly = false): LanguageService {
 
         const syntaxTreeCache: SyntaxTreeCache = new SyntaxTreeCache(host);
         let program: Program;
@@ -1162,6 +1156,8 @@ namespace ts {
         }
 
         function synchronizeHostData(): void {
+            Debug.assert(!syntaxOnly);
+
             // perform fast check if host supports it
             if (host.getProjectVersion) {
                 const hostProjectVersion = host.getProjectVersion();
@@ -1337,6 +1333,11 @@ namespace ts {
         }
 
         function getProgram(): Program {
+            if (syntaxOnly) {
+                Debug.assert(program === undefined);
+                return undefined;
+            }
+
             synchronizeHostData();
 
             return program;
@@ -1404,12 +1405,10 @@ namespace ts {
             synchronizeHostData();
             return Completions.getCompletionsAtPosition(
                 host,
-                program.getTypeChecker(),
+                program,
                 log,
-                program.getCompilerOptions(),
                 getValidSourceFile(fileName),
                 position,
-                program.getSourceFiles(),
                 fullPreferences);
         }
 
@@ -1418,11 +1417,9 @@ namespace ts {
             return Completions.getCompletionEntryDetails(
                 program,
                 log,
-                program.getCompilerOptions(),
                 getValidSourceFile(fileName),
                 position,
                 { name, source },
-                program.getSourceFiles(),
                 host,
                 formattingOptions && formatting.getFormatContext(formattingOptions),
                 getCanonicalFileName,
@@ -1431,14 +1428,7 @@ namespace ts {
 
         function getCompletionEntrySymbol(fileName: string, position: number, name: string, source?: string): Symbol {
             synchronizeHostData();
-            return Completions.getCompletionEntrySymbol(
-                program.getTypeChecker(),
-                log,
-                program.getCompilerOptions(),
-                getValidSourceFile(fileName),
-                position,
-                { name, source },
-                program.getSourceFiles());
+            return Completions.getCompletionEntrySymbol(program, log, getValidSourceFile(fileName), position, { name, source });
         }
 
         function getQuickInfoAtPosition(fileName: string, position: number): QuickInfo {
@@ -1673,20 +1663,17 @@ namespace ts {
 
         /// References and Occurrences
         function getOccurrencesAtPosition(fileName: string, position: number): ReferenceEntry[] {
-            const canonicalFileName = getCanonicalFileName(normalizeSlashes(fileName));
-            return flatMap(getDocumentHighlights(fileName, position, [fileName]), entry => entry.highlightSpans.map<ReferenceEntry>(highlightSpan => {
-                Debug.assert(getCanonicalFileName(normalizeSlashes(entry.fileName)) === canonicalFileName); // Get occurrences only supports reporting occurrences for the file queried.
-                return {
-                    fileName: entry.fileName,
-                    textSpan: highlightSpan.textSpan,
-                    isWriteAccess: highlightSpan.kind === HighlightSpanKind.writtenReference,
-                    isDefinition: false,
-                    isInString: highlightSpan.isInString,
-                };
-            }));
+            return flatMap(getDocumentHighlights(fileName, position, [fileName]), entry => entry.highlightSpans.map<ReferenceEntry>(highlightSpan => ({
+                fileName: entry.fileName,
+                textSpan: highlightSpan.textSpan,
+                isWriteAccess: highlightSpan.kind === HighlightSpanKind.writtenReference,
+                isDefinition: false,
+                isInString: highlightSpan.isInString,
+            })));
         }
 
         function getDocumentHighlights(fileName: string, position: number, filesToSearch: ReadonlyArray<string>): DocumentHighlights[] {
+            Debug.assert(filesToSearch.some(f => normalizePath(f) === fileName));
             synchronizeHostData();
             const sourceFilesToSearch = map(filesToSearch, f => Debug.assertDefined(program.getSourceFile(f)));
             const sourceFile = getValidSourceFile(fileName);

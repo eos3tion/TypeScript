@@ -1,7 +1,3 @@
-/// <reference path="checker.ts" />
-/// <reference path="factory.ts" />
-/// <reference path="utilities.ts" />
-
 namespace ts {
     const isTypeNodeOrTypeParameterDeclaration = or(isTypeNode, isTypeParameterDeclaration);
 
@@ -398,6 +394,14 @@ namespace ts {
                 return updateInferTypeNode(<InferTypeNode>node,
                     visitNode((<InferTypeNode>node).typeParameter, visitor, isTypeParameterDeclaration));
 
+            case SyntaxKind.ImportType:
+                return updateImportTypeNode(<ImportTypeNode>node,
+                    visitNode((<ImportTypeNode>node).argument, visitor, isTypeNode),
+                    visitNode((<ImportTypeNode>node).qualifier, visitor, isEntityName),
+                    visitNodes((<ImportTypeNode>node).typeArguments, visitor, isTypeNode),
+                    (<ImportTypeNode>node).isTypeOf
+                );
+
             case SyntaxKind.ParenthesizedType:
                 return updateParenthesizedType(<ParenthesizedTypeNode>node,
                     visitNode((<ParenthesizedTypeNode>node).type, visitor, isTypeNode));
@@ -474,6 +478,7 @@ namespace ts {
             case SyntaxKind.TaggedTemplateExpression:
                 return updateTaggedTemplate(<TaggedTemplateExpression>node,
                     visitNode((<TaggedTemplateExpression>node).tag, visitor, isExpression),
+                    visitNodes((<TaggedTemplateExpression>node).typeArguments, visitor, isExpression),
                     visitNode((<TaggedTemplateExpression>node).template, visitor, isTemplateLiteral));
 
             case SyntaxKind.TypeAssertionExpression:

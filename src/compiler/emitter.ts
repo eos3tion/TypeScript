@@ -1,8 +1,3 @@
-/// <reference path="checker.ts" />
-/// <reference path="transformer.ts" />
-/// <reference path="sourcemap.ts" />
-/// <reference path="comments.ts" />
-
 namespace ts {
     const brackets = createBracketsMap();
 
@@ -615,6 +610,8 @@ namespace ts {
                     return emitMappedType(<MappedTypeNode>node);
                 case SyntaxKind.LiteralType:
                     return emitLiteralType(<LiteralTypeNode>node);
+                case SyntaxKind.ImportType:
+                    return emitImportTypeNode(<ImportTypeNode>node);
                 case SyntaxKind.JSDocAllType:
                     write("*");
                     return;
@@ -1327,6 +1324,22 @@ namespace ts {
             emitExpression(node.literal);
         }
 
+        function emitImportTypeNode(node: ImportTypeNode) {
+            if (node.isTypeOf) {
+                writeKeyword("typeof");
+                writeSpace();
+            }
+            writeKeyword("import");
+            writePunctuation("(");
+            emit(node.argument);
+            writePunctuation(")");
+            if (node.qualifier) {
+                writePunctuation(".");
+                emit(node.qualifier);
+            }
+            emitTypeArguments(node, node.typeArguments);
+        }
+
         //
         // Binding patterns
         //
@@ -1449,6 +1462,7 @@ namespace ts {
 
         function emitTaggedTemplateExpression(node: TaggedTemplateExpression) {
             emitExpression(node.tag);
+            emitTypeArguments(node, node.typeArguments);
             writeSpace();
             emitExpression(node.template);
         }

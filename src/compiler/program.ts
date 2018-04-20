@@ -1,7 +1,3 @@
-/// <reference path="sys.ts" />
-/// <reference path="emitter.ts" />
-/// <reference path="core.ts" />
-
 namespace ts {
     const ignoreDiagnosticCommentRegEx = /(^\s*$)|(^\s*\/\/\/?\s*(@ts-ignore)?)/;
 
@@ -577,7 +573,6 @@ namespace ts {
         const packageIdToSourceFile = createMap<SourceFile>();
         // Maps from a SourceFile's `.path` to the name of the package it was imported with.
         let sourceFileToPackageName = createMap<string>();
-        // See `sourceFileIsRedirectedTo`.
         let redirectTargetsSet = createMap<true>();
 
         const filesByName = createMap<SourceFile | undefined>();
@@ -611,8 +606,9 @@ namespace ts {
             if (!skipDefaultLib) {
                 // If '--lib' is not specified, include default library file according to '--target'
                 // otherwise, using options specified in '--lib' instead of '--target' default library file
-                if (!options.lib) {
-                    processRootFile(getDefaultLibraryFileName(), /*isDefaultLib*/ true);
+                const defaultLibraryFileName = getDefaultLibraryFileName();
+                if (!options.lib && defaultLibraryFileName) {
+                    processRootFile(defaultLibraryFileName, /*isDefaultLib*/ true);
                 }
                 else {
                     forEach(options.lib, libFileName => {
@@ -1117,7 +1113,7 @@ namespace ts {
             // otherwise, using options specified in '--lib' instead of '--target' default library file
             const equalityComparer = host.useCaseSensitiveFileNames() ? equateStringsCaseSensitive : equateStringsCaseInsensitive;
             if (!options.lib) {
-               return equalityComparer(file.fileName, getDefaultLibraryFileName());
+                return equalityComparer(file.fileName, getDefaultLibraryFileName());
             }
             else {
                 return forEach(options.lib, libFileName => equalityComparer(file.fileName, combinePaths(defaultLibraryPath, libFileName)));
@@ -1628,6 +1624,9 @@ namespace ts {
                     collectDynamicImportOrRequireCalls(node);
                 }
             }
+            if ((file.flags & NodeFlags.PossiblyContainsDynamicImport) || isJavaScriptFile) {
+                collectDynamicImportOrRequireCalls(file.endOfFileToken);
+            }
 
             file.imports = imports || emptyArray;
             file.moduleAugmentations = moduleAugmentations || emptyArray;
@@ -1686,9 +1685,19 @@ namespace ts {
                 else if (isImportCall(node) && node.arguments.length === 1 && isStringLiteralLike(node.arguments[0])) {
                     imports = append(imports, node.arguments[0] as StringLiteralLike);
                 }
-                else {
-                    forEachChild(node, collectDynamicImportOrRequireCalls);
+                else if (isLiteralImportTypeNode(node)) {
+                    imports = append(imports, node.argument.literal);
                 }
+                else {
+                    collectDynamicImportOrRequireCallsForEachChild(node);
+                    if (hasJSDocNodes(node)) {
+                        forEach(node.jsDoc, collectDynamicImportOrRequireCallsForEachChild);
+                    }
+                }
+            }
+
+            function collectDynamicImportOrRequireCallsForEachChild(node: Node) {
+                forEachChild(node, collectDynamicImportOrRequireCalls);
             }
         }
 
@@ -1998,7 +2007,8 @@ namespace ts {
                         && !options.noResolve
                         && i < file.imports.length
                         && !elideImport
-                        && !(isJsFile && !options.allowJs);
+                        && !(isJsFile && !options.allowJs)
+                        && (isInJavaScriptFile(file.imports[i]) || !(file.imports[i].flags & NodeFlags.JSDoc));
 
                     if (elideImport) {
                         modulesWithElidedImports.set(file.path, true);

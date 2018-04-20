@@ -1,6 +1,3 @@
-/// <reference path="utilities.ts"/>
-/// <reference path="scanner.ts"/>
-
 namespace ts {
     const enum SignatureFlags {
         None = 0,
@@ -189,6 +186,10 @@ namespace ts {
                     visitNode(cbNode, (<ConditionalTypeNode>node).falseType);
             case SyntaxKind.InferType:
                 return visitNode(cbNode, (<InferTypeNode>node).typeParameter);
+            case SyntaxKind.ImportType:
+                return visitNode(cbNode, (<ImportTypeNode>node).argument) ||
+                    visitNode(cbNode, (<ImportTypeNode>node).qualifier) ||
+                    visitNodes(cbNode, cbNodes, (<ImportTypeNode>node).typeArguments);
             case SyntaxKind.ParenthesizedType:
             case SyntaxKind.TypeOperator:
                 return visitNode(cbNode, (<ParenthesizedTypeNode | TypeOperatorNode>node).type);
@@ -222,6 +223,7 @@ namespace ts {
                     visitNodes(cbNode, cbNodes, (<CallExpression>node).arguments);
             case SyntaxKind.TaggedTemplateExpression:
                 return visitNode(cbNode, (<TaggedTemplateExpression>node).tag) ||
+                    visitNodes(cbNode, cbNodes, (<TaggedTemplateExpression>node).typeArguments) ||
                     visitNode(cbNode, (<TaggedTemplateExpression>node).template);
             case SyntaxKind.TypeAssertionExpression:
                 return visitNode(cbNode, (<TypeAssertion>node).type) ||
@@ -2733,6 +2735,28 @@ namespace ts {
             return finishNode(node);
         }
 
+        function isStartOfTypeOfImportType() {
+            nextToken();
+            return token() === SyntaxKind.ImportKeyword;
+        }
+
+        function parseImportType(): ImportTypeNode {
+            sourceFile.flags |= NodeFlags.PossiblyContainsDynamicImport;
+            const node = createNode(SyntaxKind.ImportType) as ImportTypeNode;
+            if (parseOptional(SyntaxKind.TypeOfKeyword)) {
+                node.isTypeOf = true;
+            }
+            parseExpected(SyntaxKind.ImportKeyword);
+            parseExpected(SyntaxKind.OpenParenToken);
+            node.argument = parseType();
+            parseExpected(SyntaxKind.CloseParenToken);
+            if (parseOptional(SyntaxKind.DotToken)) {
+                node.qualifier = parseEntityName(/*allowReservedWords*/ true, Diagnostics.Type_expected);
+            }
+            node.typeArguments = tryParseTypeArguments();
+            return finishNode(node);
+        }
+
         function nextTokenIsNumericLiteral() {
             return nextToken() === SyntaxKind.NumericLiteral;
         }
@@ -2780,13 +2804,15 @@ namespace ts {
                     }
                 }
                 case SyntaxKind.TypeOfKeyword:
-                    return parseTypeQuery();
+                    return lookAhead(isStartOfTypeOfImportType) ? parseImportType() : parseTypeQuery();
                 case SyntaxKind.OpenBraceToken:
                     return lookAhead(isStartOfMappedType) ? parseMappedType() : parseTypeLiteral();
                 case SyntaxKind.OpenBracketToken:
                     return parseTupleType();
                 case SyntaxKind.OpenParenToken:
                     return parseParenthesizedType();
+                case SyntaxKind.ImportKeyword:
+                    return parseImportType();
                 default:
                     return parseTypeReference();
             }
@@ -2822,6 +2848,7 @@ namespace ts {
                 case SyntaxKind.ExclamationToken:
                 case SyntaxKind.DotDotDotToken:
                 case SyntaxKind.InferKeyword:
+                case SyntaxKind.ImportKeyword:
                     return true;
                 case SyntaxKind.MinusToken:
                     return !inStartOfParameter && lookAhead(nextTokenIsNumericLiteral);
@@ -4336,18 +4363,27 @@ namespace ts {
                     continue;
                 }
 
-                if (token() === SyntaxKind.NoSubstitutionTemplateLiteral || token() === SyntaxKind.TemplateHead) {
-                    const tagExpression = <TaggedTemplateExpression>createNode(SyntaxKind.TaggedTemplateExpression, expression.pos);
-                    tagExpression.tag = expression;
-                    tagExpression.template = token() === SyntaxKind.NoSubstitutionTemplateLiteral
-                        ? <NoSubstitutionTemplateLiteral>parseLiteralNode()
-                        : parseTemplateExpression();
-                    expression = finishNode(tagExpression);
+                if (isTemplateStartOfTaggedTemplate()) {
+                    expression = parseTaggedTemplateRest(expression, /*typeArguments*/ undefined);
                     continue;
                 }
 
                 return <MemberExpression>expression;
             }
+        }
+
+        function isTemplateStartOfTaggedTemplate() {
+            return token() === SyntaxKind.NoSubstitutionTemplateLiteral || token() === SyntaxKind.TemplateHead;
+        }
+
+        function parseTaggedTemplateRest(tag: LeftHandSideExpression, typeArguments: NodeArray<TypeNode> | undefined) {
+            const tagExpression = <TaggedTemplateExpression>createNode(SyntaxKind.TaggedTemplateExpression, tag.pos);
+            tagExpression.tag = tag;
+            tagExpression.typeArguments = typeArguments;
+            tagExpression.template = token() === SyntaxKind.NoSubstitutionTemplateLiteral
+                ? <NoSubstitutionTemplateLiteral>parseLiteralNode()
+                : parseTemplateExpression();
+            return finishNode(tagExpression);
         }
 
         function parseCallExpressionRest(expression: LeftHandSideExpression): LeftHandSideExpression {
@@ -4361,6 +4397,11 @@ namespace ts {
                     const typeArguments = tryParse(parseTypeArgumentsInExpression);
                     if (!typeArguments) {
                         return expression;
+                    }
+
+                    if (isTemplateStartOfTaggedTemplate()) {
+                        expression = parseTaggedTemplateRest(expression, typeArguments);
+                        continue;
                     }
 
                     const callExpr = <CallExpression>createNode(SyntaxKind.CallExpression, expression.pos);
@@ -4410,8 +4451,10 @@ namespace ts {
         function canFollowTypeArgumentsInExpression(): boolean {
             switch (token()) {
                 case SyntaxKind.OpenParenToken:                 // foo<x>(
-                // this case are the only case where this token can legally follow a type argument
-                // list.  So we definitely want to treat this as a type arg list.
+                case SyntaxKind.NoSubstitutionTemplateLiteral:  // foo<T> `...`
+                case SyntaxKind.TemplateHead:                   // foo<T> `...${100}...`
+                // these are the only tokens can legally follow a type argument
+                // list. So we definitely want to treat them as type arg lists.
 
                 case SyntaxKind.DotToken:                       // foo<x>.
                 case SyntaxKind.CloseParenToken:                // foo<x>)
@@ -4640,9 +4683,23 @@ namespace ts {
                 return finishNode(node);
             }
 
+            let expression: MemberExpression = parsePrimaryExpression();
+            let typeArguments;
+            while (true) {
+                expression = parseMemberExpressionRest(expression);
+                typeArguments = tryParse(parseTypeArgumentsInExpression);
+                if (isTemplateStartOfTaggedTemplate()) {
+                    Debug.assert(!!typeArguments,
+                        "Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'");
+                    expression = parseTaggedTemplateRest(expression, typeArguments);
+                    typeArguments = undefined;
+                }
+                break;
+            }
+
             const node = <NewExpression>createNode(SyntaxKind.NewExpression, fullStart);
-            node.expression = parseMemberExpressionOrHigher();
-            node.typeArguments = tryParse(parseTypeArgumentsInExpression);
+            node.expression = expression;
+            node.typeArguments = typeArguments;
             if (node.typeArguments || token() === SyntaxKind.OpenParenToken) {
                 node.arguments = parseArgumentList();
             }
@@ -6332,8 +6389,8 @@ namespace ts {
                             case "arg":
                             case "argument":
                             case "param":
-                                tag = parseParameterOrPropertyTag(atToken, tagName, PropertyLikeParse.Parameter);
-                                break;
+                                addTag(parseParameterOrPropertyTag(atToken, tagName, PropertyLikeParse.Parameter, indent));
+                                return;
                             case "return":
                             case "returns":
                                 tag = parseReturnTag(atToken, tagName);
@@ -6482,7 +6539,7 @@ namespace ts {
                     }
                 }
 
-                function parseParameterOrPropertyTag(atToken: AtToken, tagName: Identifier, target: PropertyLikeParse): JSDocParameterTag | JSDocPropertyTag {
+                function parseParameterOrPropertyTag(atToken: AtToken, tagName: Identifier, target: PropertyLikeParse, indent: number | undefined): JSDocParameterTag | JSDocPropertyTag {
                     let typeExpression = tryParseTypeExpression();
                     let isNameFirst = !typeExpression;
                     skipWhitespace();
@@ -6497,6 +6554,8 @@ namespace ts {
                     const result = target === PropertyLikeParse.Parameter ?
                         <JSDocParameterTag>createNode(SyntaxKind.JSDocParameterTag, atToken.pos) :
                         <JSDocPropertyTag>createNode(SyntaxKind.JSDocPropertyTag, atToken.pos);
+                    let comment: string | undefined;
+                    if (indent !== undefined) comment = parseTagComments(indent + scanner.getStartPos() - atToken.pos);
                     const nestedTypeLiteral = parseNestedTypeLiteral(typeExpression, name, target);
                     if (nestedTypeLiteral) {
                         typeExpression = nestedTypeLiteral;
@@ -6508,6 +6567,7 @@ namespace ts {
                     result.name = name;
                     result.isNameFirst = isNameFirst;
                     result.isBracketed = isBracketed;
+                    result.comment = comment;
                     return finishNode(result);
                 }
 
@@ -6754,7 +6814,7 @@ namespace ts {
                     if (target !== t) {
                         return false;
                     }
-                    const tag = parseParameterOrPropertyTag(atToken, tagName, target);
+                    const tag = parseParameterOrPropertyTag(atToken, tagName, target, /*indent*/ undefined);
                     tag.comment = parseTagComments(tag.end - tag.pos);
                     return tag;
                 }
@@ -7571,7 +7631,7 @@ namespace ts {
     const tripleSlashXMLCommentStartRegEx = /^\/\/\/\s*<(\S+)\s.*?\/>/im;
     const singleLinePragmaRegEx = /^\/\/\/?\s*@(\S+)\s*(.*)\s*$/im;
     function extractPragmas(pragmas: PragmaPsuedoMapEntry[], range: CommentRange, text: string) {
-        const tripleSlash = tripleSlashXMLCommentStartRegEx.exec(text);
+        const tripleSlash = range.kind === SyntaxKind.SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
         if (tripleSlash) {
             const name = tripleSlash[1].toLowerCase() as keyof PragmaPsuedoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
             const pragma = commentPragmas[name] as PragmaDefinition;
@@ -7608,15 +7668,17 @@ namespace ts {
             return;
         }
 
-        const singleLine = singleLinePragmaRegEx.exec(text);
+        const singleLine = range.kind === SyntaxKind.SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
         if (singleLine) {
             return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
         }
 
-        const multiLinePragmaRegEx = /\s*@(\S+)\s*(.*)\s*$/gim; // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
-        let multiLineMatch: RegExpExecArray;
-        while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
-            addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
+        if (range.kind === SyntaxKind.MultiLineCommentTrivia) {
+            const multiLinePragmaRegEx = /\s*@(\S+)\s*(.*)\s*$/gim; // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+            let multiLineMatch: RegExpExecArray;
+            while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
+                addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
+            }
         }
     }
 

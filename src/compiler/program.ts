@@ -1,3 +1,8 @@
+/// <reference path="sys.ts" />
+/// <reference path="emitter.ts" />
+/// <reference path="core.ts" />
+/// <reference path="./sorting.ts" />
+
 namespace ts {
     const ignoreDiagnosticCommentRegEx = /(^\s*$)|(^\s*\/\/\/?\s*(@ts-ignore)?)/;
 
@@ -1168,6 +1173,8 @@ namespace ts {
                 writeFile: writeFileCallback || (
                     (fileName, data, writeByteOrderMark, onError, sourceFiles) => host.writeFile(fileName, data, writeByteOrderMark, onError, sourceFiles)),
                 isEmitBlocked,
+                /*---tsplus---*/
+                getTypeChecker: program.getTypeChecker,
             };
         }
 

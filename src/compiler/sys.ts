@@ -528,7 +528,7 @@ namespace ts {
             const _path = require("path");
             const _os = require("os");
             // crypto can be absent on reduced node installations
-            let _crypto: typeof import("crypto");
+            let _crypto: any;//typeof import("crypto");
             try {
               _crypto = require("crypto");
             }

@@ -1,3 +1,8 @@
+/// <reference path="sys.ts" />
+/// <reference path="emitter.ts" />
+/// <reference path="core.ts" />
+/// <reference path="./sorting.ts" />
+
 namespace ts {
     const ignoreDiagnosticCommentRegEx = /(^\s*$)|(^\s*\/\/\/?\s*(@ts-ignore)?)/;
 
@@ -1171,6 +1176,8 @@ namespace ts {
                 readFile: f => host.readFile(f),
                 fileExists: f => host.fileExists(f),
                 ...(host.directoryExists ? { directoryExists: f => host.directoryExists!(f) } : {}),
+                /*---tsplus---*/
+                getTypeChecker: program.getTypeChecker,
             };
         }
 

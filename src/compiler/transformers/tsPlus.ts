@@ -63,7 +63,7 @@ namespace ts {
 
     export function transformTypeScriptPlus(context: TransformationContext) {
         const compilerOptions = context.getCompilerOptions();
-        const compilerDefines = getCompilerDefines(compilerOptions.defines);
+        const compilerDefines = getCompilerDefines(compilerOptions.defines) || {} as MapLike<string>;
         const typeChecker = compilerOptions.emitReflection || compilerDefines ? context.getEmitHost().getTypeChecker() : null;
         const previousOnSubstituteNode = context.onSubstituteNode;
         if (compilerDefines) {
@@ -146,9 +146,10 @@ namespace ts {
                 interfaces = allInterfaces;
             }
             node.typeNames = interfaces;
-            let fullClassName = typeChecker.getFullyQualifiedName(node.symbol);
-            const expression = createReflectHelper(context, node.name, fullClassName, interfaces);
-            setSourceMapRange(expression, createRange(node.name.pos, node.end));
+            let fullClassName = typeChecker!.getFullyQualifiedName(node.symbol);
+            let name = node.name!;
+            const expression = createReflectHelper(context, name, fullClassName, interfaces);
+            setSourceMapRange(expression, createRange(name.pos, node.end));
 
             const statement = createStatement(expression);
             setSourceMapRange(statement, createRange(-1, node.end));
@@ -160,17 +161,17 @@ namespace ts {
         function getImplementedInterfaces(node: Node, result: any) {
             let superInterfaces: NodeArray<ExpressionWithTypeArguments>;
             if (node.kind === SyntaxKind.ClassDeclaration) {
-                superInterfaces = getClassImplementsHeritageClauseElements(<ClassLikeDeclaration>node);
+                superInterfaces = getClassImplementsHeritageClauseElements(<ClassLikeDeclaration>node)!;
             }
             else {
-                superInterfaces = getInterfaceBaseTypeNodes(<InterfaceDeclaration>node);
+                superInterfaces = getInterfaceBaseTypeNodes(<InterfaceDeclaration>node)!;
             }
             if (superInterfaces) {
                 superInterfaces.forEach(superInterface => {
-                    let type = typeChecker.getTypeAtLocation(superInterface)
+                    let type = typeChecker!.getTypeAtLocation(superInterface)
                     if (type && type.symbol && type.symbol.flags & SymbolFlags.Interface) {
                         let symbol = type.symbol;
-                        let fullName = typeChecker.getFullyQualifiedName(symbol);
+                        let fullName = typeChecker!.getFullyQualifiedName(symbol);
                         result[fullName] = true;
                         const declaration = ts.getDeclarationOfKind(symbol, SyntaxKind.InterfaceDeclaration);
                         if (declaration) {
@@ -181,23 +182,23 @@ namespace ts {
             }
         }
 
-        function getSuperClassTypes(node: ClassLikeDeclaration): string[] {
-            let superClass = getClassExtendsHeritageClauseElement(node);
+        function getSuperClassTypes(node: ClassLikeDeclaration) {            
+            let superClass = tryGetClassExtendingExpressionWithTypeArguments(node)!;
             if (!superClass) {
-                return null;
+                return;
             }
-            let type = typeChecker.getTypeAtLocation(superClass);
+            let type = typeChecker && typeChecker.getTypeAtLocation(superClass);
             if (!type || !type.symbol) {
                 return;
             }
             let declaration = <ClassLikeDeclaration>ts.getDeclarationOfKind(type.symbol, SyntaxKind.ClassDeclaration);
-            return declaration ? declaration.typeNames : null;
+            return declaration && declaration.typeNames;
         }
 
 
-        function getCompilerDefines(defines: MapLike<any>): MapLike<string> {
+        function getCompilerDefines(defines?: MapLike<any>) {
             if (!defines) {
-                return null;
+                return;
             }
             let compilerDefines: MapLike<string> = {};
             let keys = Object.keys(defines);
@@ -215,7 +216,7 @@ namespace ts {
                 }
             }
             if (Object.keys(compilerDefines).length == 0) {
-                return null;
+                return;
             }
             return compilerDefines;
         }
@@ -237,7 +238,7 @@ namespace ts {
                 }
             }
 
-            let symbol = typeChecker.getSymbolAtLocation(node);
+            let symbol = typeChecker && typeChecker.getSymbolAtLocation(node);
             if (!symbol || !symbol.declarations) {
                 return false;
             }

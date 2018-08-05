@@ -29,14 +29,14 @@ namespace ts.codefix {
 
     function doChange(changes: textChanges.ChangeTracker, sourceFile: SourceFile, constructor: ConstructorDeclaration, superCall: ExpressionStatement): void {
         changes.insertNodeAtConstructorStart(sourceFile, constructor, superCall);
-        changes.deleteNode(sourceFile, superCall);
+        changes.delete(sourceFile, superCall);
     }
 
-    function getNodes(sourceFile: SourceFile, pos: number): { readonly constructor: ConstructorDeclaration, readonly superCall: ExpressionStatement } {
-        const token = getTokenAtPosition(sourceFile, pos, /*includeJsDocComment*/ false);
+    function getNodes(sourceFile: SourceFile, pos: number): { readonly constructor: ConstructorDeclaration, readonly superCall: ExpressionStatement } | undefined {
+        const token = getTokenAtPosition(sourceFile, pos);
         if (token.kind !== SyntaxKind.ThisKeyword) return undefined;
         const constructor = getContainingFunction(token) as ConstructorDeclaration;
-        const superCall = findSuperCall(constructor.body);
+        const superCall = findSuperCall(constructor.body!);
         // figure out if the `this` access is actually inside the supercall
         // i.e. super(this.a), since in that case we won't suggest a fix
         return superCall && !superCall.expression.arguments.some(arg => isPropertyAccessExpression(arg) && arg.expression === token) ? { constructor, superCall } : undefined;

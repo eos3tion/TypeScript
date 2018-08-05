@@ -28,23 +28,23 @@
 
 namespace ts {
 
-    let checker: TypeChecker;
-    let sourceFiles: SourceFile[];
-    let rootFileNames: string[];
-    let dependencyMap: Map<string[]>;
-    let pathWeightMap: Map<number>;
+    let checker: TypeChecker | null;
+    let sourceFiles: SourceFile[] | null;
+    let rootFileNames: string[] | null;
+    let dependencyMap: Map<string[]> | null;
+    let pathWeightMap: Map<number> | null;
 
     interface Map<T> {
         [index: string]: T;
         [index: number]: T;
     }
 
-    function createMap<T>(): Map<T> {
+    function createMap<T>() {
         const map: Map<T> = Object.create(null);
         // Using 'delete' on an object causes V8 to put the object in dictionary mode.
         // This disables creation of hidden classes, which are expensive when an object is
         // constantly changing shape.
-        map["__"] = undefined;
+        map["__"] = undefined as any;
         delete map["__"];
         return map;
     }
@@ -69,8 +69,11 @@ namespace ts {
     }
 
 
-    function addDependency(file: string, dependent: string): void {
+    function addDependency(file: string, dependent: string) {
         if (file == dependent) {
+            return;
+        }
+        if (!dependencyMap) {
             return;
         }
         let list = dependencyMap[file];
@@ -82,7 +85,10 @@ namespace ts {
         }
     }
 
-    function buildDependencyMap(): void {
+    function buildDependencyMap() {
+        if (!sourceFiles) {
+            return;
+        }
         dependencyMap = createMap<string[]>();
         for (let i = 0; i < sourceFiles.length; i++) {
             let sourceFile = sourceFiles[i];
@@ -93,7 +99,7 @@ namespace ts {
         }
     }
 
-    function visitFile(sourceFile: SourceFile): void {
+    function visitFile(sourceFile: SourceFile) {
         let statements = sourceFile.statements;
         let length = statements.length;
         for (let i = 0; i < length; i++) {
@@ -105,7 +111,7 @@ namespace ts {
         }
     }
 
-    function visitStatement(statement: Statement): void {
+    function visitStatement(statement?: Statement) {
         if (!statement) {
             return;
         }
@@ -205,12 +211,16 @@ namespace ts {
         }
     }
 
-    function visitModule(node: ModuleDeclaration): void {
-        if (node.body.kind === SyntaxKind.ModuleDeclaration) {
+    function visitModule(node: ModuleDeclaration) {
+        let body = node.body;
+        if (!body) {
+            return;
+        }
+        if (body.kind === SyntaxKind.ModuleDeclaration) {
             visitModule(<ModuleDeclaration>node.body);
             return;
         }
-        if (node.body.kind === SyntaxKind.ModuleBlock) {
+        if (body.kind === SyntaxKind.ModuleBlock) {
             for (let statement of (<ModuleBlock>node.body).statements) {
                 if (hasModifier(statement, ModifierFlags.Ambient)) { // has the 'declare' keyword
                     continue;
@@ -221,8 +231,8 @@ namespace ts {
 
     }
 
-    function checkDependencyAtLocation(node: Node): void {
-        let symbol = checker.getSymbolAtLocation(node);
+    function checkDependencyAtLocation(node: Node) {
+        let symbol = checker && checker.getSymbolAtLocation(node);
         if (!symbol || !symbol.declarations) {
             return;
         }
@@ -233,11 +243,11 @@ namespace ts {
         addDependency(getSourceFileOfNode(node).fileName, sourceFile.fileName);
     }
 
-    function checkInheriting(node: ClassDeclaration): void {
+    function checkInheriting(node: ClassDeclaration) {
         if (!node.heritageClauses) {
             return;
         }
-        let heritageClause: HeritageClause = null;
+        let heritageClause: HeritageClause = null as any;
         for (const clause of node.heritageClauses) {
             if (clause.token === SyntaxKind.ExtendsKeyword) {
                 heritageClause = clause;
@@ -256,7 +266,7 @@ namespace ts {
         });
     }
 
-    function visitStaticMember(node: ClassDeclaration): void {
+    function visitStaticMember(node: ClassDeclaration) {
         let members = node.members;
         if (!members) {
             return;
@@ -272,7 +282,7 @@ namespace ts {
         }
     }
 
-    function visitClassDecorators(node: ClassDeclaration): void {
+    function visitClassDecorators(node: ClassDeclaration) {
         if (node.decorators) {
             visitDecorators(node.decorators);
         }
@@ -281,8 +291,8 @@ namespace ts {
             return;
         }
         for (let member of members) {
-            let decorators: NodeArray<Decorator>;
-            let functionLikeMember: FunctionLikeDeclaration;
+            let decorators: NodeArray<Decorator> | undefined;
+            let functionLikeMember: FunctionLikeDeclaration | undefined;
             if (member.kind === SyntaxKind.GetAccessor || member.kind === SyntaxKind.SetAccessor) {
                 const accessors = getAllAccessorDeclarations(node.members, <AccessorDeclaration>member);
                 if (member !== accessors.firstAccessor) {
@@ -314,13 +324,13 @@ namespace ts {
         }
     }
 
-    function visitDecorators(decorators: NodeArray<Decorator>): void {
+    function visitDecorators(decorators: NodeArray<Decorator>) {
         for (let decorator of decorators) {
             visitExpression(decorator.expression);
         }
     }
 
-    function visitExpression(expression: Expression): void {
+    function visitExpression(expression?: Expression) {
         if (!expression) {
             return;
         }
@@ -406,7 +416,10 @@ namespace ts {
         // AsExpression
     }
 
-    function visitBinaryExpression(binary: BinaryExpression): void {
+    function visitBinaryExpression(binary: BinaryExpression) {
+        if (!checker) {
+            return;
+        }
         let left = binary.left;
         let right = binary.right;
         visitExpression(left);
@@ -438,7 +451,7 @@ namespace ts {
         }
     }
 
-    function visitObjectLiteralExpression(objectLiteral: ObjectLiteralExpression): void {
+    function visitObjectLiteralExpression(objectLiteral: ObjectLiteralExpression) {
         objectLiteral.properties.forEach(element => {
             switch (element.kind) {
                 case SyntaxKind.PropertyAssignment:
@@ -454,7 +467,7 @@ namespace ts {
         });
     }
 
-    function visitCallExpression(callExpression: CallExpression): void {
+    function visitCallExpression(callExpression: CallExpression) {
         if (callExpression.arguments) {
             callExpression.arguments.forEach(argument => {
                 visitExpression(argument);
@@ -484,7 +497,7 @@ namespace ts {
         return expression;
     }
 
-    function checkCallTarget(callerFileName: string, target: Node): void {
+    function checkCallTarget(callerFileName: string, target: Node) {
         let declarations: Declaration[] = [];
         getForwardDeclarations(target, declarations, callerFileName);
         for (let declaration of declarations) {
@@ -503,8 +516,8 @@ namespace ts {
         }
     }
 
-    function getForwardDeclarations(reference: Node, declarations: Declaration[], callerFileName: string): void {
-        let symbol = checker.getSymbolAtLocation(reference);
+    function getForwardDeclarations(reference: Node, declarations: Declaration[], callerFileName: string) {
+        let symbol = checker && checker.getSymbolAtLocation(reference);
         if (!symbol || !symbol.declarations) {
             return;
         }
@@ -549,7 +562,7 @@ namespace ts {
         }
     }
 
-    function checkClassInstantiation(node: ClassDeclaration): void {
+    function checkClassInstantiation(node: ClassDeclaration) {
         let members = node.members;
         if (!members) {
             return;
@@ -569,7 +582,7 @@ namespace ts {
         }
     }
 
-    function visitBlock(block: Block): void {
+    function visitBlock(block?: Block) {
         if (!block || block.visitedBySorting) {
             return;
         }
@@ -588,44 +601,52 @@ namespace ts {
         });
     }
 
-    function sortOnDependency(): SortingResult {
+    function sortOnDependency() {
         let result: SortingResult = <any>{};
-        result.sortedFileNames = [];
-        result.circularReferences = [];
-        pathWeightMap = createMap<number>();
-        let dtsFiles: SourceFile[] = [];
-        let tsFiles: SourceFile[] = [];
-        for (let sourceFile of sourceFiles) {
-            let path = sourceFile.fileName;
-            if (sourceFile.isDeclarationFile) {
-                pathWeightMap[path] = 10000;
-                dtsFiles.push(sourceFile);
-                continue;
+        if (sourceFiles && rootFileNames) {
+            let _sourceFiles = sourceFiles;
+            let _rootFileNames = rootFileNames;
+            result.sortedFileNames = [];
+            result.circularReferences = [];
+            let _pathWeightMap = createMap<number>();
+            pathWeightMap = _pathWeightMap;
+            let dtsFiles: SourceFile[] = [];
+            let tsFiles: SourceFile[] = [];
+            for (let sourceFile of _sourceFiles) {
+                let path = sourceFile.fileName;
+                if (sourceFile.isDeclarationFile) {
+                    _pathWeightMap[path] = 10000;
+                    dtsFiles.push(sourceFile);
+                    continue;
+                }
+                let references = updatePathWeight(path, 0, [path]);
+                if (references) {
+                    result.circularReferences = references;
+                    break;
+                }
+                tsFiles.push(sourceFile);
             }
-            let references = updatePathWeight(path, 0, [path]);
-            if (references) {
-                result.circularReferences = references;
-                break;
+            if (result.circularReferences.length === 0) {
+                tsFiles.sort(function (a: SourceFile, b: SourceFile): number {
+                    return _pathWeightMap[b.fileName] - _pathWeightMap[a.fileName];
+                });
+                _sourceFiles.length = 0;
+                _rootFileNames.length = 0;
+                dtsFiles.concat(tsFiles).forEach(sourceFile => {
+                    _sourceFiles.push(sourceFile);
+                    _rootFileNames.push(sourceFile.fileName);
+                    result.sortedFileNames.push(sourceFile.fileName);
+                });
             }
-            tsFiles.push(sourceFile);
+            pathWeightMap = null;
         }
-        if (result.circularReferences.length === 0) {
-            tsFiles.sort(function (a: SourceFile, b: SourceFile): number {
-                return pathWeightMap[b.fileName] - pathWeightMap[a.fileName];
-            });
-            sourceFiles.length = 0;
-            rootFileNames.length = 0;
-            dtsFiles.concat(tsFiles).forEach(sourceFile => {
-                sourceFiles.push(sourceFile);
-                rootFileNames.push(sourceFile.fileName);
-                result.sortedFileNames.push(sourceFile.fileName);
-            });
-        }
-        pathWeightMap = null;
         return result;
     }
 
-    function updatePathWeight(path: string, weight: number, references: string[]): string[] {
+    function updatePathWeight(path: string, weight: number, references: string[]): string[] | void {
+        if (!pathWeightMap || !dependencyMap) {
+            return;
+        }
         if (pathWeightMap[path] === undefined) {
             pathWeightMap[path] = weight;
         }
@@ -634,12 +655,12 @@ namespace ts {
                 pathWeightMap[path] = weight;
             }
             else {
-                return null;
+                return;
             }
         }
         let list = dependencyMap[path];
         if (!list) {
-            return null;
+            return;
         }
         for (let parentPath of list) {
             if (references.indexOf(parentPath) != -1) {
@@ -651,7 +672,7 @@ namespace ts {
                 return result;
             }
         }
-        return null;
+        return;
     }
 
     function getSourceFileOfNode(node: Node): SourceFile {

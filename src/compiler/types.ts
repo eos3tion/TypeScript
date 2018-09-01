@@ -3305,8 +3305,8 @@ namespace ts {
     export interface AllAccessorDeclarations {
         firstAccessor: AccessorDeclaration;
         secondAccessor: AccessorDeclaration | undefined;
-        getAccessor: AccessorDeclaration | undefined;
-        setAccessor: AccessorDeclaration | undefined;
+        getAccessor: GetAccessorDeclaration | undefined;
+        setAccessor: SetAccessorDeclaration | undefined;
     }
 
     /** Indicates how to serialize the name for a TypeReferenceNode when emitting decorator metadata */
@@ -3642,6 +3642,7 @@ namespace ts {
         superCall?: SuperCall;  // Cached first super-call found in the constructor. Used in checking whether super is called before this-accessing
         switchTypes?: Type[];             // Cached array of switch case expression types
         jsxNamespace?: Symbol | false;          // Resolved jsx namespace symbol for this node
+        contextFreeType?: Type;          // Cached context-free type used by the first pass of inference; used when a function's return is partially contextually sensitive
     }
 
     export const enum TypeFlags {
@@ -4680,15 +4681,6 @@ namespace ts {
         verticalTab = 0x0B,           // \v
     }
 
-    export interface UpToDateHost {
-        fileExists(fileName: string): boolean;
-        getModifiedTime(fileName: string): Date;
-        getUnchangedTime?(fileName: string): Date | undefined;
-        getLastStatus?(fileName: string): UpToDateStatus | undefined;
-        setLastStatus?(fileName: string, status: UpToDateStatus): void;
-        parseConfigFile?(configFilePath: ResolvedConfigFileName): ParsedCommandLine | undefined;
-    }
-
     export interface ModuleResolutionHost {
         // TODO: GH#18217 Optional methods frequently used as non-optional
 
@@ -4819,10 +4811,6 @@ namespace ts {
         /* @internal */ hasInvalidatedResolution?: HasInvalidatedResolution;
         /* @internal */ hasChangedAutomaticTypeDirectiveNames?: boolean;
         createHash?(data: string): string;
-
-        getModifiedTime?(fileName: string): Date;
-        setModifiedTime?(fileName: string, date: Date): void;
-        deleteFile?(fileName: string): void;
     }
 
     /* @internal */

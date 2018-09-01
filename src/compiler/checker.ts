@@ -5092,18 +5092,23 @@ namespace ts {
             }
         }
 
-        function getAnnotatedAccessorType(accessor: AccessorDeclaration | undefined): Type | undefined {
+        function getAnnotatedAccessorTypeNode(accessor: AccessorDeclaration | undefined): TypeNode | undefined {
             if (accessor) {
                 if (accessor.kind === SyntaxKind.GetAccessor) {
                     const getterTypeAnnotation = getEffectiveReturnTypeNode(accessor);
-                    return getterTypeAnnotation && getTypeFromTypeNode(getterTypeAnnotation);
+                    return getterTypeAnnotation;
                 }
                 else {
                     const setterTypeAnnotation = getEffectiveSetAccessorTypeAnnotationNode(accessor);
-                    return setterTypeAnnotation && getTypeFromTypeNode(setterTypeAnnotation);
+                    return setterTypeAnnotation;
                 }
             }
             return undefined;
+        }
+
+        function getAnnotatedAccessorType(accessor: AccessorDeclaration | undefined): Type | undefined {
+            const node = getAnnotatedAccessorTypeNode(accessor);
+            return node && getTypeFromTypeNode(node);
         }
 
         function getAnnotatedAccessorThisParameter(accessor: AccessorDeclaration): Symbol | undefined {
@@ -14140,8 +14145,8 @@ namespace ts {
             return resultType;
 
             function getTypeAtFlowNode(flow: FlowNode): FlowType {
-                if (flowDepth === 2500) {
-                    // We have made 2500 recursive invocations. To avoid overflowing the call stack we report an error
+                if (flowDepth === 2000) {
+                    // We have made 2000 recursive invocations. To avoid overflowing the call stack we report an error
                     // and disable further control flow analysis in the containing function or module body.
                     flowAnalysisDisabled = true;
                     reportFlowControlError(reference);
@@ -14278,7 +14283,8 @@ namespace ts {
                                 }
                             }
                             else {
-                                const indexType = getTypeOfExpression((<ElementAccessExpression>node.left).argumentExpression);
+                                // We must get the context free expression type so as to not recur in an uncached fashion on the LHS (which causes exponential blowup in compile time)
+                                const indexType = getContextFreeTypeOfExpression((<ElementAccessExpression>node.left).argumentExpression);
                                 if (isTypeAssignableToKind(indexType, TypeFlags.NumberLike)) {
                                     evolvedType = addEvolvingArrayElementType(evolvedType, node.right);
                                 }
@@ -21614,9 +21620,13 @@ namespace ts {
          * It sets the contextual type of the node to any before calling getTypeOfExpression.
          */
         function getContextFreeTypeOfExpression(node: Expression) {
+            const links = getNodeLinks(node);
+            if (links.contextFreeType) {
+                return links.contextFreeType;
+            }
             const saveContextualType = node.contextualType;
             node.contextualType = anyType;
-            const type = getTypeOfExpression(node);
+            const type = links.contextFreeType = checkExpression(node, CheckMode.SkipContextSensitive);
             node.contextualType = saveContextualType;
             return type;
         }
@@ -22166,6 +22176,7 @@ namespace ts {
                 for (const decl of indexSymbol.declarations) {
                     const declaration = <SignatureDeclaration>decl;
                     if (declaration.parameters.length === 1 && declaration.parameters[0].type) {
+                        // tslint:disable-next-line
                         switch (declaration.parameters[0].type!.kind) {
                             case SyntaxKind.StringKeyword:
                                 if (!seenStringIndexer) {
@@ -23342,9 +23353,13 @@ namespace ts {
                         }
                         break;
 
-                    case SyntaxKind.MethodDeclaration:
                     case SyntaxKind.GetAccessor:
                     case SyntaxKind.SetAccessor:
+                        const otherKind = node.kind === SyntaxKind.GetAccessor ? SyntaxKind.SetAccessor : SyntaxKind.GetAccessor;
+                        const otherAccessor = getDeclarationOfKind<AccessorDeclaration>(getSymbolOfNode(node as AccessorDeclaration), otherKind);
+                        markDecoratorMedataDataTypeNodeAsReferenced(getAnnotatedAccessorTypeNode(node as AccessorDeclaration) || otherAccessor && getAnnotatedAccessorTypeNode(otherAccessor));
+                        break;
+                    case SyntaxKind.MethodDeclaration:
                         for (const parameter of (<FunctionLikeDeclaration>node).parameters) {
                             markDecoratorMedataDataTypeNodeAsReferenced(getParameterTypeNodeForDecoratorCheck(parameter));
                         }
@@ -27867,8 +27882,8 @@ namespace ts {
                     const otherAccessor = getDeclarationOfKind<AccessorDeclaration>(getSymbolOfNode(accessor), otherKind);
                     const firstAccessor = otherAccessor && (otherAccessor.pos < accessor.pos) ? otherAccessor : accessor;
                     const secondAccessor = otherAccessor && (otherAccessor.pos < accessor.pos) ? accessor : otherAccessor;
-                    const setAccessor = accessor.kind === SyntaxKind.SetAccessor ? accessor : otherAccessor;
-                    const getAccessor = accessor.kind === SyntaxKind.GetAccessor ? accessor : otherAccessor;
+                    const setAccessor = accessor.kind === SyntaxKind.SetAccessor ? accessor : otherAccessor as SetAccessorDeclaration;
+                    const getAccessor = accessor.kind === SyntaxKind.GetAccessor ? accessor : otherAccessor as GetAccessorDeclaration;
                     return {
                         firstAccessor,
                         secondAccessor,

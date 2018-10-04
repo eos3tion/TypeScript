@@ -10080,18 +10080,6 @@ declare class TestLib {
             ],
         });
 
-        const renameATs = (aTs: File): protocol.SpanGroup => ({
-            file: aTs.path,
-            locs: [protocolTextSpanFromSubstring(aTs.content, "fnA")],
-        });
-        const renameUserTs = (userTs: File): protocol.SpanGroup => ({
-            file: userTs.path,
-            locs: [
-                protocolTextSpanFromSubstring(userTs.content, "fnA"),
-                protocolTextSpanFromSubstring(userTs.content, "fnA", { index: 1 }),
-            ],
-        });
-
         it("renameLocations", () => {
             const session = makeSampleProjects();
             const response = executeSessionRequest<protocol.RenameRequest, protocol.RenameResponse>(session, protocol.CommandTypes.Rename, protocolFileLocationFromSubstring(userTs, "fnA()"));
@@ -10312,50 +10300,6 @@ declare class TestLib {
                     relatedInformation: undefined,
                     reportsUnnecessary: true,
                     source: undefined,
-                },
-            ]);
-        });
-    });
-
-    describe("Untitled files", () => {
-        it("Can convert positions to locations", () => {
-            const aTs: File = { path: "/proj/a.ts", content: "" };
-            const tsconfig: File = { path: "/proj/tsconfig.json", content: "{}" };
-            const session = createSession(createServerHost([aTs, tsconfig]));
-
-            openFilesForSession([aTs], session);
-
-            const untitledFile = "untitled:^Untitled-1";
-            executeSessionRequestNoResponse<protocol.OpenRequest>(session, protocol.CommandTypes.Open, {
-                file: untitledFile,
-                fileContent: "let foo = 1;\nfooo/**/",
-                scriptKindName: "TS",
-                projectRootPath: "/proj",
-            });
-
-            const response = executeSessionRequest<protocol.CodeFixRequest, protocol.CodeFixResponse>(session, protocol.CommandTypes.GetCodeFixes, {
-                file: untitledFile,
-                startLine: 2,
-                startOffset: 1,
-                endLine: 2,
-                endOffset: 5,
-                errorCodes: [Diagnostics.Cannot_find_name_0_Did_you_mean_1.code],
-            });
-            assert.deepEqual<ReadonlyArray<protocol.CodeFixAction> | undefined>(response, [
-                {
-                    description: "Change spelling to 'foo'",
-                    fixAllDescription: "Fix all detected spelling errors",
-                    fixId: "fixSpelling",
-                    fixName: "spelling",
-                    changes: [{
-                        fileName: untitledFile,
-                        textChanges: [{
-                            start: { line: 2, offset: 1 },
-                            end: { line: 2, offset: 5 },
-                            newText: "foo",
-                        }],
-                    }],
-                    commands: undefined,
                 },
             ]);
         });

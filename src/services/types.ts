@@ -231,16 +231,10 @@ namespace ts {
 
         isKnownTypesPackageName?(name: string): boolean;
         installPackage?(options: InstallPackageOptions): Promise<ApplyCodeActionCommandResult>;
+        /* @internal */ inspectValue?(options: InspectValueOptions): Promise<ValueInfo>;
+        writeFile?(fileName: string, content: string): void;
     }
 
-    export interface UserPreferences {
-        readonly disableSuggestions?: boolean;
-        readonly quotePreference?: "double" | "single";
-        readonly includeCompletionsForModuleExports?: boolean;
-        readonly includeCompletionsWithInsertText?: boolean;
-        readonly importModuleSpecifierPreference?: "relative" | "non-relative";
-        readonly allowTextChangesInNewFiles?: boolean;
-    }
     /* @internal */
     export const emptyOptions = {};
 
@@ -339,9 +333,9 @@ namespace ts {
 
         getCodeFixesAtPosition(fileName: string, start: number, end: number, errorCodes: ReadonlyArray<number>, formatOptions: FormatCodeSettings, preferences: UserPreferences): ReadonlyArray<CodeFixAction>;
         getCombinedCodeFix(scope: CombinedCodeFixScope, fixId: {}, formatOptions: FormatCodeSettings, preferences: UserPreferences): CombinedCodeActions;
-        applyCodeActionCommand(action: CodeActionCommand): Promise<ApplyCodeActionCommandResult>;
-        applyCodeActionCommand(action: CodeActionCommand[]): Promise<ApplyCodeActionCommandResult[]>;
-        applyCodeActionCommand(action: CodeActionCommand | CodeActionCommand[]): Promise<ApplyCodeActionCommandResult | ApplyCodeActionCommandResult[]>;
+        applyCodeActionCommand(action: CodeActionCommand, formatSettings?: FormatCodeSettings): Promise<ApplyCodeActionCommandResult>;
+        applyCodeActionCommand(action: CodeActionCommand[], formatSettings?: FormatCodeSettings): Promise<ApplyCodeActionCommandResult[]>;
+        applyCodeActionCommand(action: CodeActionCommand | CodeActionCommand[], formatSettings?: FormatCodeSettings): Promise<ApplyCodeActionCommandResult | ApplyCodeActionCommandResult[]>;
         /** @deprecated `fileName` will be ignored */
         applyCodeActionCommand(fileName: string, action: CodeActionCommand): Promise<ApplyCodeActionCommandResult>;
         /** @deprecated `fileName` will be ignored */
@@ -534,12 +528,22 @@ namespace ts {
 
     // Publicly, this type is just `{}`. Internally it is a union of all the actions we use.
     // See `commands?: {}[]` in protocol.ts
-    export type CodeActionCommand = InstallPackageAction;
+    export type CodeActionCommand = InstallPackageAction | GenerateTypesAction;
 
     export interface InstallPackageAction {
-        /* @internal */ file: string;
-        /* @internal */ type: "install package";
-        /* @internal */ packageName: string;
+        /* @internal */ readonly type: "install package";
+        /* @internal */ readonly file: string;
+        /* @internal */ readonly packageName: string;
+    }
+
+    export interface GenerateTypesAction extends GenerateTypesOptions {
+        /* @internal */ readonly type: "generate types";
+    }
+
+    export interface GenerateTypesOptions {
+        readonly file: string; // File that was importing fileToGenerateTypesFor; used for formatting options.
+        readonly fileToGenerateTypesFor: string;
+        readonly outputFileName: string;
     }
 
     /**
@@ -725,6 +729,31 @@ namespace ts {
         indentMultiLineObjectLiteralBeginningOnBlankLine?: boolean;
     }
 
+    /* @internal */
+    export const testFormatSettings: FormatCodeSettings = {
+        baseIndentSize: 0,
+        indentSize: 4,
+        tabSize: 4,
+        newLineCharacter: "\n",
+        convertTabsToSpaces: true,
+        indentStyle: IndentStyle.Smart,
+        insertSpaceAfterCommaDelimiter: true,
+        insertSpaceAfterSemicolonInForStatements: true,
+        insertSpaceBeforeAndAfterBinaryOperators: true,
+        insertSpaceAfterConstructor: false,
+        insertSpaceAfterKeywordsInControlFlowStatements: true,
+        insertSpaceAfterFunctionKeywordForAnonymousFunctions: false,
+        insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis: false,
+        insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets: false,
+        insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: true,
+        insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces: false,
+        insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces: false,
+        insertSpaceAfterTypeAssertion: false,
+        placeOpenBraceOnNewLineForFunctions: false,
+        placeOpenBraceOnNewLineForControlBlocks: false,
+        insertSpaceBeforeTypeAnnotation: false
+    };
+
     export interface DefinitionInfo extends DocumentSpan {
         kind: ScriptElementKind;
         name: string;
@@ -792,6 +821,11 @@ namespace ts {
 
     export interface RenameInfo {
         canRename: boolean;
+        /**
+         * File or directory to rename.
+         * If set, `getEditsForFileRename` should be called instead of `findRenameLocations`.
+         */
+        fileToRename?: string;
         localizedErrorMessage?: string;
         displayName: string;
         fullDisplayName: string;

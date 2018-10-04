@@ -258,10 +258,6 @@ namespace ts.server {
         readonly symLinkedProjects: MultiMap<Project>;
     };
 
-    function isProjectsArray(projects: Projects): projects is ReadonlyArray<Project> {
-        return !!(<ReadonlyArray<Project>>projects).length;
-    }
-
     /**
      * This helper function processes a list of projects and return the concatenated, sortd and deduplicated output of processing each project.
      */
@@ -270,20 +266,15 @@ namespace ts.server {
         getValue: (path: Path) => T,
         projects: Projects,
         action: (project: Project, value: T) => ReadonlyArray<U> | U | undefined,
-        comparer?: (a: U, b: U) => number,
-        areEqual?: (a: U, b: U) => boolean,
     ): U[] {
-        const outputs = flatMap(isProjectsArray(projects) ? projects : projects.projects, project => action(project, defaultValue));
-        if (!isProjectsArray(projects) && projects.symLinkedProjects) {
+        const outputs = flatMap(isArray(projects) ? projects : projects.projects, project => action(project, defaultValue));
+        if (!isArray(projects) && projects.symLinkedProjects) {
             projects.symLinkedProjects.forEach((projects, path) => {
                 const value = getValue(path as Path);
                 outputs.push(...flatMap(projects, project => action(project, value)));
             });
         }
-
-        return comparer
-            ? sortAndDeduplicate(outputs, comparer, areEqual)
-            : deduplicate(outputs, areEqual);
+        return deduplicate(outputs, equateValues);
     }
 
     function combineProjectOutputFromEveryProject<T>(projectService: ProjectService, action: (project: Project) => ReadonlyArray<T>, areEqual: (a: T, b: T) => boolean) {
@@ -345,16 +336,23 @@ namespace ts.server {
     function combineProjectOutputForReferences(projects: Projects, defaultProject: Project, initialLocation: sourcemaps.SourceMappableLocation, projectService: ProjectService): ReadonlyArray<ReferencedSymbol> {
         const outputs: ReferencedSymbol[] = [];
 
-        combineProjectOutputWorker<sourcemaps.SourceMappableLocation>(projects, defaultProject, initialLocation, projectService, ({ project, location }, tryAddToTodo) => {
+        combineProjectOutputWorker<sourcemaps.SourceMappableLocation>(projects, defaultProject, initialLocation, projectService, ({ project, location }, getMappedLocation) => {
             for (const outputReferencedSymbol of project.getLanguageService().findReferences(location.fileName, location.position) || emptyArray) {
-                let symbolToAddTo = find(outputs, o => documentSpansEqual(o.definition, outputReferencedSymbol.definition));
+                const mappedDefinitionFile = getMappedLocation(project, documentSpanLocation(outputReferencedSymbol.definition));
+                const definition: ReferencedSymbolDefinitionInfo = mappedDefinitionFile === undefined ? outputReferencedSymbol.definition : {
+                    ...outputReferencedSymbol.definition,
+                    textSpan: createTextSpan(mappedDefinitionFile.position, outputReferencedSymbol.definition.textSpan.length),
+                    fileName: mappedDefinitionFile.fileName,
+                };
+                let symbolToAddTo = find(outputs, o => documentSpansEqual(o.definition, definition));
                 if (!symbolToAddTo) {
-                    symbolToAddTo = { definition: outputReferencedSymbol.definition, references: [] };
+                    symbolToAddTo = { definition, references: [] };
                     outputs.push(symbolToAddTo);
                 }
 
                 for (const ref of outputReferencedSymbol.references) {
-                    if (!contains(symbolToAddTo.references, ref, documentSpansEqual) && !tryAddToTodo(project, documentSpanLocation(ref))) {
+                    // If it's in a mapped file, that is added to the todo list by `getMappedLocation`.
+                    if (!contains(symbolToAddTo.references, ref, documentSpansEqual) && !getMappedLocation(project, documentSpanLocation(ref))) {
                         symbolToAddTo.references.push(ref);
                     }
                 }
@@ -370,7 +368,7 @@ namespace ts.server {
     }
 
     function forEachProjectInProjects(projects: Projects, path: string | undefined, cb: (project: Project, path: string | undefined) => void): void {
-        for (const project of isProjectsArray(projects) ? projects : projects.projects) {
+        for (const project of isArray(projects) ? projects : projects.projects) {
             cb(project, path);
         }
         if (!isArray(projects) && projects.symLinkedProjects) {
@@ -382,12 +380,17 @@ namespace ts.server {
         }
     }
 
+    type CombineProjectOutputCallback<TLocation extends sourcemaps.SourceMappableLocation | undefined> = (
+        where: ProjectAndLocation<TLocation>,
+        getMappedLocation: (project: Project, location: sourcemaps.SourceMappableLocation) => sourcemaps.SourceMappableLocation | undefined,
+    ) => void;
+
     function combineProjectOutputWorker<TLocation extends sourcemaps.SourceMappableLocation | undefined>(
         projects: Projects,
         defaultProject: Project,
         initialLocation: TLocation,
         projectService: ProjectService,
-        cb: (where: ProjectAndLocation<TLocation>, getMappedLocation: (project: Project, location: sourcemaps.SourceMappableLocation) => boolean) => void,
+        cb: CombineProjectOutputCallback<TLocation>,
         getDefinition: (() => sourcemaps.SourceMappableLocation | undefined) | undefined,
     ): void {
         let toDo: ProjectAndLocation<TLocation>[] | undefined;
@@ -426,30 +429,27 @@ namespace ts.server {
         projectService: ProjectService,
         toDo: ProjectAndLocation<TLocation>[] | undefined,
         seenProjects: Map<true>,
-        cb: (where: ProjectAndLocation<TLocation>, getMappedLocation: (project: Project, location: sourcemaps.SourceMappableLocation) => boolean) => void,
+        cb: CombineProjectOutputCallback<TLocation>,
     ): ProjectAndLocation<TLocation>[] | undefined {
         if (projectAndLocation.project.getCancellationToken().isCancellationRequested()) return undefined; // Skip rest of toDo if cancelled
         cb(projectAndLocation, (project, location) => {
             seenProjects.set(projectAndLocation.project.projectName, true);
-            const originalLocation = project.getSourceMapper().tryGetOriginalLocation(location);
-            if (!originalLocation) return false;
-            const originalProjectAndScriptInfo = projectService.getProjectForFileWithoutOpening(toNormalizedPath(originalLocation.fileName));
-            if (!originalProjectAndScriptInfo) return false;
+            const originalLocation = projectService.getOriginalLocationEnsuringConfiguredProject(project, location);
+            if (!originalLocation) return undefined;
 
-            if (originalProjectAndScriptInfo) {
-                toDo = toDo || [];
+            const originalScriptInfo = projectService.getScriptInfo(originalLocation.fileName)!;
+            toDo = toDo || [];
 
-                for (const project of originalProjectAndScriptInfo.projects) {
-                    addToTodo({ project, location: originalLocation as TLocation }, toDo, seenProjects);
-                }
-                const symlinkedProjectsMap = projectService.getSymlinkedProjects(originalProjectAndScriptInfo.scriptInfo);
-                if (symlinkedProjectsMap) {
-                    symlinkedProjectsMap.forEach((symlinkedProjects) => {
-                        for (const symlinkedProject of symlinkedProjects) addToTodo({ project: symlinkedProject, location: originalLocation as TLocation }, toDo!, seenProjects);
-                    });
-                }
+            for (const project of originalScriptInfo.containingProjects) {
+                addToTodo({ project, location: originalLocation as TLocation }, toDo, seenProjects);
             }
-            return true;
+            const symlinkedProjectsMap = projectService.getSymlinkedProjects(originalScriptInfo);
+            if (symlinkedProjectsMap) {
+                symlinkedProjectsMap.forEach((symlinkedProjects) => {
+                    for (const symlinkedProject of symlinkedProjects) addToTodo({ project: symlinkedProject, location: originalLocation as TLocation }, toDo!, seenProjects);
+                });
+            }
+            return originalLocation;
         });
         return toDo;
     }
@@ -566,6 +566,10 @@ namespace ts.server {
                     const { openFiles } = event.data;
                     this.projectsUpdatedInBackgroundEvent(openFiles);
                     break;
+                case LargeFileReferencedEvent:
+                    const { file, fileSize, maxFileSize } = event.data;
+                    this.event<protocol.LargeFileReferencedEventBody>({ file, fileSize, maxFileSize }, "largeFileReferenced");
+                    break;
                 case ConfigFileDiagEvent:
                     const { triggerFile, configFileName: configFile, diagnostics } = event.data;
                     const bakedDiags = map(diagnostics, diagnostic => formatConfigFileDiag(diagnostic, /*includeFileName*/ true));
@@ -574,6 +578,10 @@ namespace ts.server {
                         configFile,
                         diagnostics: bakedDiags
                     }, "configFileDiag");
+                    break;
+                case SurveyReady:
+                    const { surveyId } = event.data;
+                    this.event<protocol.SurveyReadyEventBody>({ surveyId }, "surveyReady");
                     break;
                 case ProjectLanguageServiceStateEvent: {
                     const eventName: protocol.ProjectLanguageServiceStateEventName = "projectLanguageServiceState";
@@ -702,7 +710,7 @@ namespace ts.server {
                 const { fileName, project } = checkList[index];
                 index++;
                 // Ensure the project is upto date before checking if this file is present in the project
-                project.updateGraph();
+                updateProjectIfDirty(project);
                 if (!project.containsFile(fileName, requireOpen)) {
                     return;
                 }
@@ -1091,7 +1099,7 @@ namespace ts.server {
 
         private getProjectInfoWorker(uncheckedFileName: string, projectFileName: string | undefined, needFileNameList: boolean, excludeConfigFiles: boolean) {
             const { project } = this.getFileAndProjectWorker(uncheckedFileName, projectFileName);
-            project.updateGraph();
+            updateProjectIfDirty(project);
             const projectInfo = {
                 configFileName: project.getProjectName(),
                 languageServiceDisabled: !project.languageServiceEnabled,
@@ -1100,13 +1108,13 @@ namespace ts.server {
             return projectInfo;
         }
 
-        private getRenameInfo(args: protocol.FileLocationRequestArgs) {
+        private getRenameInfo(args: protocol.FileLocationRequestArgs): RenameInfo {
             const { file, project } = this.getFileAndProject(args);
             const position = this.getPositionInFile(args, file);
             return project.getLanguageService().getRenameInfo(file, position);
         }
 
-        private getProjects(args: protocol.FileRequestArgs): Projects {
+        private getProjects(args: protocol.FileRequestArgs, getScriptInfoEnsuringProjectsUptoDate?: boolean, ignoreNoProjectError?: boolean): Projects {
             let projects: ReadonlyArray<Project> | undefined;
             let symLinkedProjects: MultiMap<Project> | undefined;
             if (args.projectFileName) {
@@ -1116,13 +1124,18 @@ namespace ts.server {
                 }
             }
             else {
-                const scriptInfo = this.projectService.getScriptInfo(args.file)!;
+                const scriptInfo = getScriptInfoEnsuringProjectsUptoDate ?
+                    this.projectService.getScriptInfoEnsuringProjectsUptoDate(args.file) :
+                    this.projectService.getScriptInfo(args.file);
+                if (!scriptInfo) {
+                    return ignoreNoProjectError ? emptyArray : Errors.ThrowNoProject();
+                }
                 projects = scriptInfo.containingProjects;
                 symLinkedProjects = this.projectService.getSymlinkedProjects(scriptInfo);
             }
             // filter handles case when 'projects' is undefined
             projects = filter(projects, p => p.languageServiceEnabled && !p.isOrphan());
-            if ((!projects || !projects.length) && !symLinkedProjects) {
+            if (!ignoreNoProjectError && (!projects || !projects.length) && !symLinkedProjects) {
                 return Errors.ThrowNoProject();
             }
             return symLinkedProjects ? { projects: projects!, symLinkedProjects } : projects!; // TODO: GH#18217
@@ -1148,13 +1161,12 @@ namespace ts.server {
             if (!simplifiedResult) return locations;
 
             const defaultProject = this.getDefaultProject(args);
-            const renameInfo = Session.mapRenameInfo(defaultProject.getLanguageService().getRenameInfo(file, position));
+            const renameInfo: protocol.RenameInfo = this.mapRenameInfo(defaultProject.getLanguageService().getRenameInfo(file, position), Debug.assertDefined(this.projectService.getScriptInfo(file)));
             return { info: renameInfo, locs: this.toSpanGroups(locations) };
         }
 
-        // strips 'triggerSpan'
-        private static mapRenameInfo({ canRename, localizedErrorMessage, displayName, fullDisplayName, kind, kindModifiers }: RenameInfo): protocol.RenameInfo {
-            return { canRename, localizedErrorMessage, displayName, fullDisplayName, kind, kindModifiers };
+        private mapRenameInfo({ canRename, fileToRename, localizedErrorMessage, displayName, fullDisplayName, kind, kindModifiers, triggerSpan }: RenameInfo, scriptInfo: ScriptInfo): protocol.RenameInfo {
+            return { canRename, fileToRename, localizedErrorMessage, displayName, fullDisplayName, kind, kindModifiers, triggerSpan: this.toLocationTextSpan(triggerSpan, scriptInfo) };
         }
 
         private toSpanGroups(locations: ReadonlyArray<RenameLocation>): ReadonlyArray<protocol.SpanGroup> {
@@ -1421,7 +1433,7 @@ namespace ts.server {
             const position = this.getPosition(args, scriptInfo);
 
             const completions = project.getLanguageService().getCompletionsAtPosition(file, position, {
-                ...this.getPreferences(file),
+                ...convertUserPreferences(this.getPreferences(file)),
                 triggerCharacter: args.triggerCharacter,
                 includeExternalModuleExports: args.includeExternalModuleExports,
                 includeInsertTextCompletions: args.includeInsertTextCompletions
@@ -1465,18 +1477,16 @@ namespace ts.server {
         }
 
         private getCompileOnSaveAffectedFileList(args: protocol.FileRequestArgs): ReadonlyArray<protocol.CompileOnSaveAffectedFileListSingleProject> {
-            const info = this.projectService.getScriptInfoEnsuringProjectsUptoDate(args.file);
+            const projects = this.getProjects(args, /*getScriptInfoEnsuringProjectsUptoDate*/ true, /*ignoreNoProjectError*/ true);
+            const info = this.projectService.getScriptInfo(args.file);
             if (!info) {
                 return emptyArray;
             }
 
-            // if specified a project, we only return affected file list in this project
-            const projects = args.projectFileName ? [this.projectService.findProject(args.projectFileName)!] : info.containingProjects;
-            const symLinkedProjects = !args.projectFileName && this.projectService.getSymlinkedProjects(info);
             return combineProjectOutput(
                 info,
                 path => this.projectService.getScriptInfoForPath(path)!,
-                symLinkedProjects ? { projects, symLinkedProjects } : projects,
+                projects,
                 (project, info) => {
                     let result: protocol.CompileOnSaveAffectedFileListSingleProject | undefined;
                     if (project.compileOnSaveEnabled && project.languageServiceEnabled && !project.isOrphan() && !project.getCompilationSettings().noEmit) {
@@ -1795,15 +1805,12 @@ namespace ts.server {
         }
 
         private getCodeFixes(args: protocol.CodeFixRequestArgs, simplifiedResult: boolean): ReadonlyArray<protocol.CodeFixAction> | ReadonlyArray<CodeFixAction> | undefined {
-            if (args.errorCodes!.length === 0) { // TODO: GH#18217
-                return undefined;
-            }
             const { file, project } = this.getFileAndProject(args);
 
             const scriptInfo = project.getScriptInfoForNormalizedPath(file)!;
             const { startPosition, endPosition } = this.getStartAndEndPosition(args, scriptInfo);
 
-            const codeActions = project.getLanguageService().getCodeFixesAtPosition(file, startPosition, endPosition, args.errorCodes!, this.getFormatOptions(file), this.getPreferences(file));
+            const codeActions = project.getLanguageService().getCodeFixesAtPosition(file, startPosition, endPosition, args.errorCodes, this.getFormatOptions(file), this.getPreferences(file));
             return simplifiedResult ? codeActions.map(codeAction => this.mapCodeFixAction(codeAction)) : codeActions;
         }
 
@@ -1822,8 +1829,8 @@ namespace ts.server {
         private applyCodeActionCommand(args: protocol.ApplyCodeActionCommandRequestArgs): {} {
             const commands = args.command as CodeActionCommand | CodeActionCommand[]; // They should be sending back the command we sent them.
             for (const command of toArray(commands)) {
-                const { project } = this.getFileAndProject(command);
-                project.getLanguageService().applyCodeActionCommand(command).then(
+                const { file, project } = this.getFileAndProject(command);
+                project.getLanguageService().applyCodeActionCommand(command, this.getFormatOptions(file)).then(
                     _result => { /* TODO: GH#20447 report success message? */ },
                     _error => { /* TODO: GH#20447 report errors */ });
             }
@@ -2355,7 +2362,7 @@ namespace ts.server {
             return this.projectService.getFormatCodeOptions(file);
         }
 
-        private getPreferences(file: NormalizedPath): UserPreferences {
+        private getPreferences(file: NormalizedPath): protocol.UserPreferences {
             return this.projectService.getPreferences(file);
         }
 
@@ -2363,7 +2370,7 @@ namespace ts.server {
             return this.projectService.getHostFormatCodeOptions();
         }
 
-        private getHostPreferences(): UserPreferences {
+        private getHostPreferences(): protocol.UserPreferences {
             return this.projectService.getHostPreferences();
         }
     }

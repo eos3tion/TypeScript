@@ -705,7 +705,7 @@ namespace ts.server.protocol {
         /**
          * Errorcodes we want to get the fixes for.
          */
-        errorCodes?: ReadonlyArray<number>;
+        errorCodes: ReadonlyArray<number>;
     }
 
     export interface GetCombinedCodeFixRequestArgs {
@@ -1094,6 +1094,12 @@ namespace ts.server.protocol {
         canRename: boolean;
 
         /**
+         * File or directory to rename.
+         * If set, `getEditsForFileRename` should be called instead of `findRenameLocations`.
+         */
+        fileToRename?: string;
+
+        /**
          * Error message if item can not be renamed.
          */
         localizedErrorMessage?: string;
@@ -1117,6 +1123,9 @@ namespace ts.server.protocol {
          * Optional modifiers for the kind (such as 'public').
          */
         kindModifiers: string;
+
+        /** Span of text to rename. */
+        triggerSpan: TextSpan;
     }
 
     /**
@@ -1839,7 +1848,7 @@ namespace ts.server.protocol {
      * begin with prefix.
      */
     export interface CompletionsRequest extends FileLocationRequest {
-        command: CommandTypes.Completions;
+        command: CommandTypes.Completions | CommandTypes.CompletionInfo;
         arguments: CompletionsRequestArgs;
     }
 
@@ -2436,6 +2445,39 @@ namespace ts.server.protocol {
         openFiles: string[];
     }
 
+    export type SurveyReadyEventName = "surveyReady";
+
+    export interface SurveyReadyEvent extends Event {
+        event: SurveyReadyEventName;
+        body: SurveyReadyEventBody;
+    }
+
+    export interface SurveyReadyEventBody {
+        /** Name of the survey. This is an internal machine- and programmer-friendly name */
+        surveyId: string;
+    }
+
+    export type LargeFileReferencedEventName = "largeFileReferenced";
+    export interface LargeFileReferencedEvent extends Event {
+        event: LargeFileReferencedEventName;
+        body: LargeFileReferencedEventBody;
+    }
+
+    export interface LargeFileReferencedEventBody {
+        /**
+         * name of the large file being loaded
+         */
+        file: string;
+        /**
+         * size of the file
+         */
+        fileSize: number;
+        /**
+         * max file size allowed on the server
+         */
+        maxFileSize: number;
+    }
+
     /**
      * Arguments for reload request.
      */
@@ -2802,6 +2844,7 @@ namespace ts.server.protocol {
         readonly includeCompletionsWithInsertText?: boolean;
         readonly importModuleSpecifierPreference?: "relative" | "non-relative";
         readonly allowTextChangesInNewFiles?: boolean;
+        readonly lazyConfiguredProjectsFromExternalProject?: boolean;
     }
 
     export interface CompilerOptions {

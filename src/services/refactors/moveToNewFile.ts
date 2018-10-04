@@ -340,7 +340,7 @@ namespace ts.refactor {
         const { name, namedBindings } = importDecl.importClause;
         const defaultUnused = !name || isUnused(name);
         const namedBindingsUnused = !namedBindings ||
-            (namedBindings.kind === SyntaxKind.NamespaceImport ? isUnused(namedBindings.name) : namedBindings.elements.every(e => isUnused(e.name)));
+            (namedBindings.kind === SyntaxKind.NamespaceImport ? isUnused(namedBindings.name) : namedBindings.elements.length !== 0 && namedBindings.elements.every(e => isUnused(e.name)));
         if (defaultUnused && namedBindingsUnused) {
             changes.delete(sourceFile, importDecl);
         }
@@ -657,7 +657,7 @@ namespace ts.refactor {
 
             case SyntaxKind.ExpressionStatement: {
                 const { expression } = statement as ExpressionStatement;
-                return isBinaryExpression(expression) && getSpecialPropertyAssignmentKind(expression) === SpecialPropertyAssignmentKind.ExportsProperty
+                return isBinaryExpression(expression) && getAssignmentDeclarationKind(expression) === AssignmentDeclarationKind.ExportsProperty
                     ? cb(statement as TopLevelExpressionStatement)
                     : undefined;
             }

@@ -270,17 +270,17 @@ namespace ts.NavigationBar {
                 break;
 
             case SyntaxKind.BinaryExpression: {
-                const special = getSpecialPropertyAssignmentKind(node as BinaryExpression);
+                const special = getAssignmentDeclarationKind(node as BinaryExpression);
                 switch (special) {
-                    case SpecialPropertyAssignmentKind.ExportsProperty:
-                    case SpecialPropertyAssignmentKind.ModuleExports:
-                    case SpecialPropertyAssignmentKind.PrototypeProperty:
-                    case SpecialPropertyAssignmentKind.Prototype:
+                    case AssignmentDeclarationKind.ExportsProperty:
+                    case AssignmentDeclarationKind.ModuleExports:
+                    case AssignmentDeclarationKind.PrototypeProperty:
+                    case AssignmentDeclarationKind.Prototype:
                         addNodeWithRecursiveChild(node, (node as BinaryExpression).right);
                         return;
-                    case SpecialPropertyAssignmentKind.ThisProperty:
-                    case SpecialPropertyAssignmentKind.Property:
-                    case SpecialPropertyAssignmentKind.None:
+                    case AssignmentDeclarationKind.ThisProperty:
+                    case AssignmentDeclarationKind.Property:
+                    case AssignmentDeclarationKind.None:
                         break;
                     default:
                         Debug.assertNever(special);
@@ -416,7 +416,7 @@ namespace ts.NavigationBar {
         }
 
         const declName = getNameOfDeclaration(<Declaration>node);
-        if (declName) {
+        if (declName && isPropertyName(declName)) {
             return unescapeLeadingUnderscores(getPropertyNameForPropertyNameNode(declName)!); // TODO: GH#18217
         }
         switch (node.kind) {
@@ -612,7 +612,7 @@ namespace ts.NavigationBar {
      * We store 'A' as associated with a NavNode, and use getModuleName to traverse down again.
      */
     function getInteriorModule(decl: ModuleDeclaration): ModuleDeclaration {
-        return decl.body!.kind === SyntaxKind.ModuleDeclaration ? getInteriorModule(<ModuleDeclaration>decl.body) : decl; // TODO: GH#18217
+        return decl.body && isModuleDeclaration(decl.body) ? getInteriorModule(decl.body) : decl;
     }
 
     function isComputedProperty(member: EnumMember): boolean {

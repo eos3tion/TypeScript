@@ -651,6 +651,7 @@ namespace ts {
             ResolvedReturnType,
             ImmediateBaseConstraint,
             EnumTagType,
+            JSDocTypeReference,
         }
 
         const enum CheckMode {
@@ -1455,7 +1456,7 @@ namespace ts {
             if (!result) {
                 if (lastLocation) {
                     Debug.assert(lastLocation.kind === SyntaxKind.SourceFile);
-                    if ((lastLocation as SourceFile).commonJsModuleIndicator && name === "exports") {
+                    if ((lastLocation as SourceFile).commonJsModuleIndicator && name === "exports" && meaning & lastLocation.symbol.flags) {
                         return lastLocation.symbol;
                     }
                 }
@@ -2340,7 +2341,7 @@ namespace ts {
         }
 
         function getCommonJsExportEquals(exported: Symbol | undefined, moduleSymbol: Symbol): Symbol | undefined {
-            if (!exported || moduleSymbol.exports!.size === 1) {
+            if (!exported || exported === unknownSymbol || moduleSymbol.exports!.size === 1) {
                 return exported;
             }
             const merged = cloneSymbol(exported);
@@ -4490,6 +4491,8 @@ namespace ts {
                     return !!(<Signature>target).resolvedReturnType;
                 case TypeSystemPropertyName.ImmediateBaseConstraint:
                     return !!(<Type>target).immediateBaseConstraint;
+                case TypeSystemPropertyName.JSDocTypeReference:
+                    return !!getSymbolLinks(target as Symbol).resolvedJSDocType;
             }
             return Debug.assertNever(propertyName);
         }
@@ -8258,7 +8261,7 @@ namespace ts {
                 return type;
             }
 
-            // JS are 'string' or 'number', not an enum type.
+            // JS enums are 'string' or 'number', not an enum type.
             const enumTag = isInJSFile(node) && symbol.valueDeclaration && getJSDocEnumTag(symbol.valueDeclaration);
             if (enumTag) {
                 const links = getNodeLinks(enumTag);
@@ -8301,12 +8304,21 @@ namespace ts {
          * the type of this reference is just the type of the value we resolved to.
          */
         function getJSDocTypeReference(node: NodeWithTypeArguments, symbol: Symbol, typeArguments: Type[] | undefined): Type | undefined {
+            if (!pushTypeResolution(symbol, TypeSystemPropertyName.JSDocTypeReference)) {
+                return errorType;
+            }
             const assignedType = getAssignedClassType(symbol);
             const valueType = getTypeOfSymbol(symbol);
             const referenceType = valueType.symbol && valueType.symbol !== symbol && !isInferredClassType(valueType) && getTypeReferenceTypeWorker(node, valueType.symbol, typeArguments);
+            if (!popTypeResolution()) {
+                getSymbolLinks(symbol).resolvedJSDocType = errorType;
+                error(node, Diagnostics.JSDoc_type_0_circularly_references_itself, symbolToString(symbol));
+                return errorType;
+            }
             if (referenceType || assignedType) {
                 // TODO: GH#18217 (should the `|| assignedType` be at a lower precedence?)
-                return (referenceType && assignedType ? getIntersectionType([assignedType, referenceType]) : referenceType || assignedType)!;
+                const type = (referenceType && assignedType ? getIntersectionType([assignedType, referenceType]) : referenceType || assignedType)!;
+                return getSymbolLinks(symbol).resolvedJSDocType = type;
             }
         }
 
@@ -8443,7 +8455,7 @@ namespace ts {
                     symbol = resolveTypeReferenceName(getTypeReferenceName(node), meaning);
                     type = getTypeReferenceType(node, symbol);
                 }
-                // Cache both the resolved symbol and the resolved type. The resolved symbol is needed in when we check the
+                // Cache both the resolved symbol and the resolved type. The resolved symbol is needed when we check the
                 // type reference in checkTypeReferenceNode.
                 links.resolvedSymbol = symbol;
                 links.resolvedType = type;
@@ -20272,18 +20284,20 @@ namespace ts {
          * file.
          */
         function isJSConstructor(node: Declaration | undefined): boolean {
-            if (node && isInJSFile(node)) {
+            if (!node || !isInJSFile(node)) {
+                return false;
+            }
+            const func = isFunctionDeclaration(node) || isFunctionExpression(node) ? node :
+                isVariableDeclaration(node) && node.initializer && isFunctionExpression(node.initializer) ? node.initializer :
+                undefined;
+            if (func) {
                 // If the node has a @class tag, treat it like a constructor.
                 if (getJSDocClassTag(node)) return true;
 
                 // If the symbol of the node has members, treat it like a constructor.
-                const symbol = isFunctionDeclaration(node) || isFunctionExpression(node) ? getSymbolOfNode(node) :
-                     isVariableDeclaration(node) && node.initializer && isFunctionExpression(node.initializer) ? getSymbolOfNode(node.initializer) :
-                     undefined;
-
+                const symbol = getSymbolOfNode(func);
                 return !!symbol && symbol.members !== undefined;
             }
-
             return false;
         }
 
@@ -20317,7 +20331,7 @@ namespace ts {
                  isBinaryExpression(decl.parent) && getSymbolOfNode(decl.parent.left) ||
                  isVariableDeclaration(decl.parent) && getSymbolOfNode(decl.parent));
             const prototype = assignmentSymbol && assignmentSymbol.exports && assignmentSymbol.exports.get("prototype" as __String);
-            const init = prototype && getAssignedJSPrototype(prototype.valueDeclaration);
+            const init = prototype && prototype.valueDeclaration && getAssignedJSPrototype(prototype.valueDeclaration);
             return init ? checkExpression(init) : undefined;
         }
 

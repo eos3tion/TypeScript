@@ -1,6 +1,3 @@
-/// <reference path="../factory.ts" />
-/// <reference path="../visitor.ts" />
-
 //////////////////////////////////////////////////////////////////////////////////////
 //
 //  The MIT License (MIT)
@@ -63,15 +60,15 @@ namespace ts {
 
     export function transformTypeScriptPlus(context: TransformationContext) {
         const compilerOptions = context.getCompilerOptions();
-        const compilerDefines = getCompilerDefines(compilerOptions.defines) || {} as MapLike<string>;
-        const typeChecker = compilerOptions.emitReflection || compilerDefines ? context.getEmitHost().getTypeChecker() : null;
+        const compilerDefines = getCompilerDefines(compilerOptions.defines);
+        const typeChecker = context.getEmitHost().getTypeChecker();
         const previousOnSubstituteNode = context.onSubstituteNode;
         if (compilerDefines) {
             context.onSubstituteNode = onSubstituteNode;
             context.enableSubstitution(SyntaxKind.Identifier);
         }
 
-        return transformSourceFile;
+        return chainBundle(transformSourceFile);
 
         function transformSourceFile(node: SourceFile) {
             if (!compilerOptions.emitReflection) {
@@ -159,19 +156,19 @@ namespace ts {
         }
 
         function getImplementedInterfaces(node: Node, result: any) {
-            let superInterfaces: NodeArray<ExpressionWithTypeArguments>;
+            let superInterfaces: NodeArray<ExpressionWithTypeArguments> | undefined;
             if (node.kind === SyntaxKind.ClassDeclaration) {
-                superInterfaces = getClassImplementsHeritageClauseElements(<ClassLikeDeclaration>node)!;
+                superInterfaces = getClassImplementsHeritageClauseElements(<ClassLikeDeclaration>node);
             }
             else {
-                superInterfaces = getInterfaceBaseTypeNodes(<InterfaceDeclaration>node)!;
+                superInterfaces = getInterfaceBaseTypeNodes(<InterfaceDeclaration>node);
             }
             if (superInterfaces) {
                 superInterfaces.forEach(superInterface => {
-                    let type = typeChecker!.getTypeAtLocation(superInterface)
+                    let type = typeChecker.getTypeAtLocation(superInterface)
                     if (type && type.symbol && type.symbol.flags & SymbolFlags.Interface) {
                         let symbol = type.symbol;
-                        let fullName = typeChecker!.getFullyQualifiedName(symbol);
+                        let fullName = typeChecker.getFullyQualifiedName(symbol);
                         result[fullName] = true;
                         const declaration = ts.getDeclarationOfKind(symbol, SyntaxKind.InterfaceDeclaration);
                         if (declaration) {
@@ -182,7 +179,7 @@ namespace ts {
             }
         }
 
-        function getSuperClassTypes(node: ClassLikeDeclaration) {            
+        function getSuperClassTypes(node: ClassLikeDeclaration) {
             let superClass = tryGetClassExtendingExpressionWithTypeArguments(node)!;
             if (!superClass) {
                 return;
@@ -197,26 +194,22 @@ namespace ts {
 
 
         function getCompilerDefines(defines?: MapLike<any>) {
-            if (!defines) {
-                return;
-            }
-            let compilerDefines: MapLike<string> = {};
-            let keys = Object.keys(defines);
-            for (let key of keys) {
-                let value = defines[key];
-                let type = typeof value;
-                switch (type) {
-                    case "boolean":
-                    case "number":
-                        compilerDefines[key] = value.toString();
-                        break;
-                    case "string":
-                        compilerDefines[key] = "\"" + value + "\"";
-                        break;
+            let compilerDefines: MapLike<any> = {};
+            if (defines) {
+                let keys = Object.keys(defines);
+                for (let key of keys) {
+                    let value = defines[key];
+                    let type = typeof value;
+                    switch (type) {
+                        case "boolean":
+                        case "number":
+                            compilerDefines[key] = value.toString();
+                            break;
+                        case "string":
+                            compilerDefines[key] = "\"" + value + "\"";
+                            break;
+                    }
                 }
-            }
-            if (Object.keys(compilerDefines).length == 0) {
-                return;
             }
             return compilerDefines;
         }
@@ -238,7 +231,7 @@ namespace ts {
                 }
             }
 
-            let symbol = typeChecker && typeChecker.getSymbolAtLocation(node);
+            let symbol = typeChecker.getSymbolAtLocation(node);
             if (!symbol || !symbol.declarations) {
                 return false;
             }

@@ -226,8 +226,11 @@ namespace ts {
                 exitStatus = ExitStatus.DiagnosticsPresent_OutputsGenerated;
             }
         }
+        const exitCode = emitFilesAndReportErrors(program, reportDiagnostic, s => sys.write(s + sys.newLine));
+        if (exitCode != ExitStatus.Success) {
+            exitStatus = exitCode;
+        }
         /*------------tsplus-------------*/
-        exitStatus = emitFilesAndReportErrors(program, reportDiagnostic, s => sys.write(s + sys.newLine));
         reportStatistics(program);
         return sys.exit(exitStatus);
     }

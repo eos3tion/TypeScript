@@ -14,7 +14,7 @@ and limitations under the License.
 ***************************************************************************** */
 
 declare namespace ts {
-    const versionMajorMinor = "3.1";
+    const versionMajorMinor = "3.2";
     /** The version of the TypeScript compiler release */
     const version: string;
 }
@@ -69,7 +69,8 @@ declare namespace ts {
         pos: number;
         end: number;
     }
-    type JsDocSyntaxKind = SyntaxKind.EndOfFileToken | SyntaxKind.WhitespaceTrivia | SyntaxKind.AtToken | SyntaxKind.NewLineTrivia | SyntaxKind.AsteriskToken | SyntaxKind.OpenBraceToken | SyntaxKind.CloseBraceToken | SyntaxKind.LessThanToken | SyntaxKind.OpenBracketToken | SyntaxKind.CloseBracketToken | SyntaxKind.EqualsToken | SyntaxKind.CommaToken | SyntaxKind.DotToken | SyntaxKind.Identifier | SyntaxKind.NoSubstitutionTemplateLiteral | SyntaxKind.Unknown;
+    type JsDocSyntaxKind = SyntaxKind.EndOfFileToken | SyntaxKind.WhitespaceTrivia | SyntaxKind.AtToken | SyntaxKind.NewLineTrivia | SyntaxKind.AsteriskToken | SyntaxKind.OpenBraceToken | SyntaxKind.CloseBraceToken | SyntaxKind.LessThanToken | SyntaxKind.OpenBracketToken | SyntaxKind.CloseBracketToken | SyntaxKind.EqualsToken | SyntaxKind.CommaToken | SyntaxKind.DotToken | SyntaxKind.Identifier | SyntaxKind.NoSubstitutionTemplateLiteral | SyntaxKind.Unknown | KeywordSyntaxKind;
+    type KeywordSyntaxKind = SyntaxKind.AbstractKeyword | SyntaxKind.AnyKeyword | SyntaxKind.AsKeyword | SyntaxKind.BooleanKeyword | SyntaxKind.BreakKeyword | SyntaxKind.CaseKeyword | SyntaxKind.CatchKeyword | SyntaxKind.ClassKeyword | SyntaxKind.ContinueKeyword | SyntaxKind.ConstKeyword | SyntaxKind.ConstructorKeyword | SyntaxKind.DebuggerKeyword | SyntaxKind.DeclareKeyword | SyntaxKind.DefaultKeyword | SyntaxKind.DeleteKeyword | SyntaxKind.DoKeyword | SyntaxKind.ElseKeyword | SyntaxKind.EnumKeyword | SyntaxKind.ExportKeyword | SyntaxKind.ExtendsKeyword | SyntaxKind.FalseKeyword | SyntaxKind.FinallyKeyword | SyntaxKind.ForKeyword | SyntaxKind.FromKeyword | SyntaxKind.FunctionKeyword | SyntaxKind.GetKeyword | SyntaxKind.IfKeyword | SyntaxKind.ImplementsKeyword | SyntaxKind.ImportKeyword | SyntaxKind.InKeyword | SyntaxKind.InferKeyword | SyntaxKind.InstanceOfKeyword | SyntaxKind.InterfaceKeyword | SyntaxKind.IsKeyword | SyntaxKind.KeyOfKeyword | SyntaxKind.LetKeyword | SyntaxKind.ModuleKeyword | SyntaxKind.NamespaceKeyword | SyntaxKind.NeverKeyword | SyntaxKind.NewKeyword | SyntaxKind.NullKeyword | SyntaxKind.NumberKeyword | SyntaxKind.ObjectKeyword | SyntaxKind.PackageKeyword | SyntaxKind.PrivateKeyword | SyntaxKind.ProtectedKeyword | SyntaxKind.PublicKeyword | SyntaxKind.ReadonlyKeyword | SyntaxKind.RequireKeyword | SyntaxKind.GlobalKeyword | SyntaxKind.ReturnKeyword | SyntaxKind.SetKeyword | SyntaxKind.StaticKeyword | SyntaxKind.StringKeyword | SyntaxKind.SuperKeyword | SyntaxKind.SwitchKeyword | SyntaxKind.SymbolKeyword | SyntaxKind.ThisKeyword | SyntaxKind.ThrowKeyword | SyntaxKind.TrueKeyword | SyntaxKind.TryKeyword | SyntaxKind.TypeKeyword | SyntaxKind.TypeOfKeyword | SyntaxKind.UndefinedKeyword | SyntaxKind.UniqueKeyword | SyntaxKind.UnknownKeyword | SyntaxKind.VarKeyword | SyntaxKind.VoidKeyword | SyntaxKind.WhileKeyword | SyntaxKind.WithKeyword | SyntaxKind.YieldKeyword | SyntaxKind.AsyncKeyword | SyntaxKind.AwaitKeyword | SyntaxKind.OfKeyword;
     type JsxTokenSyntaxKind = SyntaxKind.LessThanSlashToken | SyntaxKind.EndOfFileToken | SyntaxKind.ConflictMarkerTrivia | SyntaxKind.JsxText | SyntaxKind.JsxTextAllWhiteSpaces | SyntaxKind.OpenBraceToken | SyntaxKind.LessThanToken;
     enum SyntaxKind {
         Unknown = 0,
@@ -1082,7 +1083,7 @@ declare namespace ts {
     }
     interface ExpressionWithTypeArguments extends NodeWithTypeArguments {
         kind: SyntaxKind.ExpressionWithTypeArguments;
-        parent: HeritageClause;
+        parent: HeritageClause | JSDocAugmentsTag;
         expression: LeftHandSideExpression;
     }
     interface NewExpression extends PrimaryExpression, Declaration {
@@ -2494,6 +2495,7 @@ declare namespace ts {
         sourceRoot?: string;
         strict?: boolean;
         strictFunctionTypes?: boolean;
+        strictBindCallApply?: boolean;
         strictNullChecks?: boolean;
         strictPropertyInitialization?: boolean;
         suppressExcessPropertyErrors?: boolean;
@@ -4958,6 +4960,8 @@ declare namespace ts {
         originalFileName?: string;
     }
     interface RenameLocation extends DocumentSpan {
+        readonly prefixText?: string;
+        readonly suffixText?: string;
     }
     interface ReferenceEntry extends DocumentSpan {
         isWriteAccess: boolean;
@@ -6481,7 +6485,11 @@ declare namespace ts.server.protocol {
         /** The file to which the spans apply */
         file: string;
         /** The text spans in this group */
-        locs: TextSpan[];
+        locs: RenameTextSpan[];
+    }
+    interface RenameTextSpan extends TextSpan {
+        readonly prefixText?: string;
+        readonly suffixText?: string;
     }
     interface RenameResponseBody {
         /**
@@ -7506,6 +7514,26 @@ declare namespace ts.server.protocol {
          */
         openFiles: string[];
     }
+    type ProjectLoadingStartEventName = "projectLoadingStart";
+    interface ProjectLoadingStartEvent extends Event {
+        event: ProjectLoadingStartEventName;
+        body: ProjectLoadingStartEventBody;
+    }
+    interface ProjectLoadingStartEventBody {
+        /** name of the project */
+        projectName: string;
+        /** reason for loading */
+        reason: string;
+    }
+    type ProjectLoadingFinishEventName = "projectLoadingFinish";
+    interface ProjectLoadingFinishEvent extends Event {
+        event: ProjectLoadingFinishEventName;
+        body: ProjectLoadingFinishEventBody;
+    }
+    interface ProjectLoadingFinishEventBody {
+        /** name of the project */
+        projectName: string;
+    }
     type SurveyReadyEventName = "surveyReady";
     interface SurveyReadyEvent extends Event {
         event: SurveyReadyEventName;
@@ -8258,6 +8286,8 @@ declare namespace ts.server {
 declare namespace ts.server {
     const maxProgramSizeForNonTsFiles: number;
     const ProjectsUpdatedInBackgroundEvent = "projectsUpdatedInBackground";
+    const ProjectLoadingStartEvent = "projectLoadingStart";
+    const ProjectLoadingFinishEvent = "projectLoadingFinish";
     const SurveyReady = "surveyReady";
     const LargeFileReferencedEvent = "largeFileReferenced";
     const ConfigFileDiagEvent = "configFileDiag";
@@ -8268,6 +8298,19 @@ declare namespace ts.server {
         eventName: typeof ProjectsUpdatedInBackgroundEvent;
         data: {
             openFiles: string[];
+        };
+    }
+    interface ProjectLoadingStartEvent {
+        eventName: typeof ProjectLoadingStartEvent;
+        data: {
+            project: Project;
+            reason: string;
+        };
+    }
+    interface ProjectLoadingFinishEvent {
+        eventName: typeof ProjectLoadingFinishEvent;
+        data: {
+            project: Project;
         };
     }
     interface SurveyReady {
@@ -8354,7 +8397,7 @@ declare namespace ts.server {
     interface OpenFileInfo {
         readonly checkJs: boolean;
     }
-    type ProjectServiceEvent = LargeFileReferencedEvent | SurveyReady | ProjectsUpdatedInBackgroundEvent | ConfigFileDiagEvent | ProjectLanguageServiceStateEvent | ProjectInfoTelemetryEvent | OpenFileInfoTelemetryEvent;
+    type ProjectServiceEvent = LargeFileReferencedEvent | SurveyReady | ProjectsUpdatedInBackgroundEvent | ProjectLoadingStartEvent | ProjectLoadingFinishEvent | ConfigFileDiagEvent | ProjectLanguageServiceStateEvent | ProjectInfoTelemetryEvent | OpenFileInfoTelemetryEvent;
     type ProjectServiceEventHandler = (event: ProjectServiceEvent) => void;
     interface SafeList {
         [name: string]: {
@@ -8453,7 +8496,7 @@ declare namespace ts.server {
         private readonly throttledOperations;
         private readonly hostConfiguration;
         private safelist;
-        private legacySafelist;
+        private readonly legacySafelist;
         private pendingProjectUpdates;
         readonly currentDirectory: NormalizedPath;
         readonly toCanonicalFileName: (f: string) => string;
@@ -8686,6 +8729,7 @@ declare namespace ts.server {
         globalPlugins?: ReadonlyArray<string>;
         pluginProbeLocations?: ReadonlyArray<string>;
         allowLocalPluginLoads?: boolean;
+        typesMapLocation?: string;
     }
     class Session implements EventSender {
         private readonly gcTimer;
@@ -8708,6 +8752,7 @@ declare namespace ts.server {
         private defaultEventHandler;
         private projectsUpdatedInBackgroundEvent;
         logError(err: Error, cmd: string): void;
+        private logErrorWorker;
         send(msg: protocol.Message): void;
         event<T extends object>(body: T, eventName: string): void;
         /** @deprecated */

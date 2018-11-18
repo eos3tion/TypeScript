@@ -1,18 +1,3 @@
-/// <reference path="visitor.ts" />
-/// <reference path="transformers/utilities.ts" />
-/// <reference path="transformers/ts.ts" />
-/// <reference path="transformers/tsPlus.ts" />
-/// <reference path="transformers/jsx.ts" />
-/// <reference path="transformers/esnext.ts" />
-/// <reference path="transformers/es2017.ts" />
-/// <reference path="transformers/es2016.ts" />
-/// <reference path="transformers/es2015.ts" />
-/// <reference path="transformers/generators.ts" />
-/// <reference path="transformers/es5.ts" />
-/// <reference path="transformers/module/module.ts" />
-/// <reference path="transformers/module/system.ts" />
-/// <reference path="transformers/module/es2015.ts" />
-
 /* @internal */
 namespace ts {
     function getModuleTransformer(moduleKind: ModuleKind): TransformerFactory<SourceFile | Bundle> {
@@ -47,12 +32,6 @@ namespace ts {
 
         addRange(transformers, customTransformers && customTransformers.before);
 
-        /*--------------tspuls---------------*/
-        if(compilerOptions.defines || compilerOptions.emitReflection){
-            transformers.push(transformTypeScriptPlus);
-        }
-        /*--------------tspuls---------------*/
-        
         transformers.push(transformTypeScript);
 
         if (jsx === JsxEmit.React) {
@@ -89,6 +68,14 @@ namespace ts {
         return transformers;
     }
 
+    export function noEmitSubstitution(_hint: EmitHint, node: Node) {
+        return node;
+    }
+
+    export function noEmitNotification(hint: EmitHint, node: Node, callback: (hint: EmitHint, node: Node) => void) {
+        callback(hint, node);
+    }
+
     /**
      * Transforms an array of SourceFiles by passing them through each transformer.
      *
@@ -108,8 +95,8 @@ namespace ts {
         let lexicalEnvironmentStackOffset = 0;
         let lexicalEnvironmentSuspended = false;
         let emitHelpers: EmitHelper[] | undefined;
-        let onSubstituteNode: TransformationContext["onSubstituteNode"] = (_, node) => node;
-        let onEmitNode: TransformationContext["onEmitNode"] = (hint, node, callback) => callback(hint, node);
+        let onSubstituteNode: TransformationContext["onSubstituteNode"] = noEmitSubstitution;
+        let onEmitNode: TransformationContext["onEmitNode"] = noEmitNotification;
         let state = TransformationState.Uninitialized;
         const diagnostics: DiagnosticWithLocation[] = [];
 

@@ -14,7 +14,7 @@ and limitations under the License.
 ***************************************************************************** */
 
 declare namespace ts {
-    const versionMajorMinor = "3.1";
+    const versionMajorMinor = "3.2";
     /** The version of the TypeScript compiler release */
     const version: string;
 }
@@ -69,7 +69,8 @@ declare namespace ts {
         pos: number;
         end: number;
     }
-    type JsDocSyntaxKind = SyntaxKind.EndOfFileToken | SyntaxKind.WhitespaceTrivia | SyntaxKind.AtToken | SyntaxKind.NewLineTrivia | SyntaxKind.AsteriskToken | SyntaxKind.OpenBraceToken | SyntaxKind.CloseBraceToken | SyntaxKind.LessThanToken | SyntaxKind.OpenBracketToken | SyntaxKind.CloseBracketToken | SyntaxKind.EqualsToken | SyntaxKind.CommaToken | SyntaxKind.DotToken | SyntaxKind.Identifier | SyntaxKind.NoSubstitutionTemplateLiteral | SyntaxKind.Unknown;
+    type JsDocSyntaxKind = SyntaxKind.EndOfFileToken | SyntaxKind.WhitespaceTrivia | SyntaxKind.AtToken | SyntaxKind.NewLineTrivia | SyntaxKind.AsteriskToken | SyntaxKind.OpenBraceToken | SyntaxKind.CloseBraceToken | SyntaxKind.LessThanToken | SyntaxKind.OpenBracketToken | SyntaxKind.CloseBracketToken | SyntaxKind.EqualsToken | SyntaxKind.CommaToken | SyntaxKind.DotToken | SyntaxKind.Identifier | SyntaxKind.NoSubstitutionTemplateLiteral | SyntaxKind.Unknown | KeywordSyntaxKind;
+    type KeywordSyntaxKind = SyntaxKind.AbstractKeyword | SyntaxKind.AnyKeyword | SyntaxKind.AsKeyword | SyntaxKind.BooleanKeyword | SyntaxKind.BreakKeyword | SyntaxKind.CaseKeyword | SyntaxKind.CatchKeyword | SyntaxKind.ClassKeyword | SyntaxKind.ContinueKeyword | SyntaxKind.ConstKeyword | SyntaxKind.ConstructorKeyword | SyntaxKind.DebuggerKeyword | SyntaxKind.DeclareKeyword | SyntaxKind.DefaultKeyword | SyntaxKind.DeleteKeyword | SyntaxKind.DoKeyword | SyntaxKind.ElseKeyword | SyntaxKind.EnumKeyword | SyntaxKind.ExportKeyword | SyntaxKind.ExtendsKeyword | SyntaxKind.FalseKeyword | SyntaxKind.FinallyKeyword | SyntaxKind.ForKeyword | SyntaxKind.FromKeyword | SyntaxKind.FunctionKeyword | SyntaxKind.GetKeyword | SyntaxKind.IfKeyword | SyntaxKind.ImplementsKeyword | SyntaxKind.ImportKeyword | SyntaxKind.InKeyword | SyntaxKind.InferKeyword | SyntaxKind.InstanceOfKeyword | SyntaxKind.InterfaceKeyword | SyntaxKind.IsKeyword | SyntaxKind.KeyOfKeyword | SyntaxKind.LetKeyword | SyntaxKind.ModuleKeyword | SyntaxKind.NamespaceKeyword | SyntaxKind.NeverKeyword | SyntaxKind.NewKeyword | SyntaxKind.NullKeyword | SyntaxKind.NumberKeyword | SyntaxKind.ObjectKeyword | SyntaxKind.PackageKeyword | SyntaxKind.PrivateKeyword | SyntaxKind.ProtectedKeyword | SyntaxKind.PublicKeyword | SyntaxKind.ReadonlyKeyword | SyntaxKind.RequireKeyword | SyntaxKind.GlobalKeyword | SyntaxKind.ReturnKeyword | SyntaxKind.SetKeyword | SyntaxKind.StaticKeyword | SyntaxKind.StringKeyword | SyntaxKind.SuperKeyword | SyntaxKind.SwitchKeyword | SyntaxKind.SymbolKeyword | SyntaxKind.ThisKeyword | SyntaxKind.ThrowKeyword | SyntaxKind.TrueKeyword | SyntaxKind.TryKeyword | SyntaxKind.TypeKeyword | SyntaxKind.TypeOfKeyword | SyntaxKind.UndefinedKeyword | SyntaxKind.UniqueKeyword | SyntaxKind.UnknownKeyword | SyntaxKind.VarKeyword | SyntaxKind.VoidKeyword | SyntaxKind.WhileKeyword | SyntaxKind.WithKeyword | SyntaxKind.YieldKeyword | SyntaxKind.AsyncKeyword | SyntaxKind.AwaitKeyword | SyntaxKind.OfKeyword;
     type JsxTokenSyntaxKind = SyntaxKind.LessThanSlashToken | SyntaxKind.EndOfFileToken | SyntaxKind.ConflictMarkerTrivia | SyntaxKind.JsxText | SyntaxKind.JsxTextAllWhiteSpaces | SyntaxKind.OpenBraceToken | SyntaxKind.LessThanToken;
     enum SyntaxKind {
         Unknown = 0,
@@ -1082,7 +1083,7 @@ declare namespace ts {
     }
     interface ExpressionWithTypeArguments extends NodeWithTypeArguments {
         kind: SyntaxKind.ExpressionWithTypeArguments;
-        parent: HeritageClause;
+        parent: HeritageClause | JSDocAugmentsTag;
         expression: LeftHandSideExpression;
     }
     interface NewExpression extends PrimaryExpression, Declaration {
@@ -2494,6 +2495,7 @@ declare namespace ts {
         sourceRoot?: string;
         strict?: boolean;
         strictFunctionTypes?: boolean;
+        strictBindCallApply?: boolean;
         strictNullChecks?: boolean;
         strictPropertyInitialization?: boolean;
         stripInternal?: boolean;
@@ -4516,80 +4518,6 @@ declare namespace ts.server {
         readonly kind: ActionSet;
     }
 }
-declare namespace ts.server {
-    type ActionSet = "action::set";
-    type ActionInvalidate = "action::invalidate";
-    type ActionPackageInstalled = "action::packageInstalled";
-    type EventTypesRegistry = "event::typesRegistry";
-    type EventBeginInstallTypes = "event::beginInstallTypes";
-    type EventEndInstallTypes = "event::endInstallTypes";
-    type EventInitializationFailed = "event::initializationFailed";
-    interface SortedReadonlyArray<T> extends ReadonlyArray<T> {
-        " __sortedArrayBrand": any;
-    }
-    interface TypingInstallerResponse {
-        readonly kind: ActionSet | ActionInvalidate | EventTypesRegistry | ActionPackageInstalled | EventBeginInstallTypes | EventEndInstallTypes | EventInitializationFailed;
-    }
-    interface TypingInstallerRequestWithProjectName {
-        readonly projectName: string;
-    }
-    interface DiscoverTypings extends TypingInstallerRequestWithProjectName {
-        readonly fileNames: string[];
-        readonly projectRootPath: Path;
-        readonly compilerOptions: CompilerOptions;
-        readonly typeAcquisition: TypeAcquisition;
-        readonly unresolvedImports: SortedReadonlyArray<string>;
-        readonly cachePath?: string;
-        readonly kind: "discover";
-    }
-    interface CloseProject extends TypingInstallerRequestWithProjectName {
-        readonly kind: "closeProject";
-    }
-    interface TypesRegistryRequest {
-        readonly kind: "typesRegistry";
-    }
-    interface InstallPackageRequest extends TypingInstallerRequestWithProjectName {
-        readonly kind: "installPackage";
-        readonly fileName: Path;
-        readonly packageName: string;
-        readonly projectRootPath: Path;
-    }
-    interface PackageInstalledResponse extends ProjectResponse {
-        readonly kind: ActionPackageInstalled;
-        readonly success: boolean;
-        readonly message: string;
-    }
-    interface InitializationFailedResponse extends TypingInstallerResponse {
-        readonly kind: EventInitializationFailed;
-        readonly message: string;
-    }
-    interface ProjectResponse extends TypingInstallerResponse {
-        readonly projectName: string;
-    }
-    interface InvalidateCachedTypings extends ProjectResponse {
-        readonly kind: ActionInvalidate;
-    }
-    interface InstallTypes extends ProjectResponse {
-        readonly kind: EventBeginInstallTypes | EventEndInstallTypes;
-        readonly eventId: number;
-        readonly typingsInstallerVersion: string;
-        readonly packagesToInstall: ReadonlyArray<string>;
-    }
-    interface BeginInstallTypes extends InstallTypes {
-        readonly kind: EventBeginInstallTypes;
-    }
-    interface EndInstallTypes extends InstallTypes {
-        readonly kind: EventEndInstallTypes;
-        readonly installSuccess: boolean;
-    }
-    interface SetTypings extends ProjectResponse {
-        readonly typeAcquisition: TypeAcquisition;
-        readonly compilerOptions: CompilerOptions;
-        readonly typings: string[];
-        readonly unresolvedImports: SortedReadonlyArray<string>;
-        readonly kind: ActionSet;
-    }
-}
 declare namespace ts {
     interface Node {
         getSourceFile(): SourceFile;
@@ -5033,6 +4961,8 @@ declare namespace ts {
         originalFileName?: string;
     }
     interface RenameLocation extends DocumentSpan {
+        readonly prefixText?: string;
+        readonly suffixText?: string;
     }
     interface ReferenceEntry extends DocumentSpan {
         isWriteAccess: boolean;

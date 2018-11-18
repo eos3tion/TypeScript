@@ -393,8 +393,8 @@ namespace ts.server {
             const locations: RenameLocation[] = [];
             for (const entry of body.locs) {
                 const fileName = entry.file;
-                for (const loc of entry.locs) {
-                    locations.push({ textSpan: this.decodeSpan(loc, fileName), fileName });
+                for (const { start, end, ...prefixSuffixText } of entry.locs) {
+                    locations.push({ textSpan: this.decodeSpan({ start, end }, fileName), fileName, ...prefixSuffixText });
                 }
             }
 
@@ -692,6 +692,10 @@ namespace ts.server {
             const response = this.processResponse<protocol.BraceResponse>(request);
 
             return response.body!.map(entry => this.decodeSpan(entry, fileName)); // TODO: GH#18217
+        }
+
+        configurePlugin(pluginName: string, configuration: any): void {
+            this.processRequest<protocol.ConfigurePluginRequest>("configurePlugin", { pluginName, configuration });
         }
 
         getIndentationAtPosition(_fileName: string, _position: number, _options: EditorOptions): number {

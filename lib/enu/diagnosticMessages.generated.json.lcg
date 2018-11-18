@@ -2319,6 +2319,12 @@
               </Str>
               <Disp Icon="Str" />
             </Item>
+            <Item ItemId=";Enable_strict_bind_call_and_apply_methods_on_functions_6214" ItemType="0" PsrId="306" Leaf="true">
+              <Str Cat="Text">
+                <Val><![CDATA[Enable strict 'bind', 'call', and 'apply' methods on functions.]]></Val>
+              </Str>
+              <Disp Icon="Str" />
+            </Item>
             <Item ItemId=";Enable_strict_checking_of_function_types_6186" ItemType="0" PsrId="306" Leaf="true">
               <Str Cat="Text">
                 <Val><![CDATA[Enable strict checking of function types.]]></Val>

@@ -3123,12 +3123,6 @@
               </Str>
               <Disp Icon="Str" />
             </Item>
-            <Item ItemId=";Index_0_is_out_of_bounds_in_tuple_of_length_1_2733" ItemType="0" PsrId="306" Leaf="true">
-              <Str Cat="Text">
-                <Val><![CDATA[Index '{0}' is out-of-bounds in tuple of length {1}.]]></Val>
-              </Str>
-              <Disp Icon="Str" />
-            </Item>
             <Item ItemId=";Index_signature_in_type_0_only_permits_reading_2542" ItemType="0" PsrId="306" Leaf="true">
               <Str Cat="Text">
                 <Val><![CDATA[Index signature in type '{0}' only permits reading.]]></Val>

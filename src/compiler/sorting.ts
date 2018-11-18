@@ -105,7 +105,7 @@ namespace ts {
                 case SyntaxKind.ClassDeclaration:
                     checkInheriting(<ClassDeclaration>statement);
                     visitStaticMember(<ClassDeclaration>statement);
-                    if (statement.transformFlags & TransformFlags.ContainsTypeScriptClassSyntax) {
+                    if (statement.transformFlags & TransformFlags.ContainsTypeScriptClassSyntax && some(statement.decorators)) {
                         visitClassDecorators(<ClassDeclaration>statement);
                     }
                     break;

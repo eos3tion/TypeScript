@@ -32,6 +32,12 @@ namespace ts {
 
         addRange(transformers, customTransformers && customTransformers.before);
 
+        /*--------------tsplus---------------*/
+        if (compilerOptions.defines || compilerOptions.emitReflection) {
+            transformers.push(transformTypeScriptPlus);
+        }
+        /*--------------tsplus---------------*/
+
         transformers.push(transformTypeScript);
 
         if (jsx === JsxEmit.React) {

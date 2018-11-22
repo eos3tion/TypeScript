@@ -47,7 +47,11 @@ namespace ts {
         const rootFileNames = program.getRootFileNames();
         const checker = program.getTypeChecker();
         const visitedBlocks = [] as Block[];
-        const dependencyMap = buildDependencyMap(sourceFiles);
+        if (!sourceFiles) {
+            return;
+        }
+        const dependencyMap = createMap<string[]>();
+        buildDependencyMap(sourceFiles);
         return sortOnDependency();
 
         function addDependency(file: string, dependent: string) {
@@ -67,10 +71,6 @@ namespace ts {
         }
 
         function buildDependencyMap(sourceFiles: ReadonlyArray<SourceFile>) {
-            if (!sourceFiles) {
-                return;
-            }
-            const dependencyMap = createMap<string[]>();
             for (let i = 0; i < sourceFiles.length; i++) {
                 let sourceFile = sourceFiles[i];
                 if (sourceFile.isDeclarationFile) {
@@ -78,7 +78,6 @@ namespace ts {
                 }
                 visitFile(sourceFile);
             }
-            return dependencyMap;
         }
 
         function visitFile(sourceFile: SourceFile) {
@@ -105,7 +104,7 @@ namespace ts {
                 case SyntaxKind.ClassDeclaration:
                     checkInheriting(<ClassDeclaration>statement);
                     visitStaticMember(<ClassDeclaration>statement);
-                    if (statement.transformFlags & TransformFlags.ContainsTypeScriptClassSyntax && some(statement.decorators)) {
+                    if (statement.transformFlags & TransformFlags.ContainsTypeScriptClassSyntax) {
                         visitClassDecorators(<ClassDeclaration>statement);
                     }
                     break;

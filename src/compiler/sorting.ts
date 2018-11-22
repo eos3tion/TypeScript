@@ -634,8 +634,8 @@ namespace ts {
 
         function sortOnDependency() {
             //使用副本进行操作
-            let _sourceFiles = sourceFiles.concat();
-            let _rootFileNames = rootFileNames.concat();
+            let _sourceFiles = sourceFiles as Array<SourceFile>;
+            let _rootFileNames = rootFileNames as Array<string>;
             let sortedFileNames = [] as string[];
             let circularReferences = [] as string[];
             let pathWeightMap = createMap<number>();
@@ -659,6 +659,7 @@ namespace ts {
                 tsFiles.sort(function (a: SourceFile, b: SourceFile): number {
                     return pathWeightMap[b.fileName] - pathWeightMap[a.fileName];
                 });
+                //将排序好的源码文件拷贝到原program中
                 _sourceFiles.length = 0;
                 _rootFileNames.length = 0;
                 dtsFiles.concat(tsFiles).forEach(sourceFile => {

@@ -47,10 +47,7 @@ namespace ts {
         const rootFileNames = program.getRootFileNames();
         const checker = program.getTypeChecker();
         const visitedBlocks = [] as Block[];
-        if (!sourceFiles) {
-            return;
-        }
-        const dependencyMap = createMap<string[]>();
+        const dependencyMap = sourceFiles && createMap<string[]>();
         buildDependencyMap(sourceFiles);
         return sortOnDependency();
 

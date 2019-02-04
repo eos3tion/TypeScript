@@ -1,4 +1,3 @@
-/** Non-internal stuff goes here */
 namespace ts {
     export function isExternalModuleNameRelative(moduleName: string): boolean {
         // TypeScript 1.0 spec (April 2014): 11.2.1
@@ -779,7 +778,8 @@ namespace ts {
             case SyntaxKind.NoSubstitutionTemplateLiteral:
                 return escapeLeadingUnderscores(name.text);
             case SyntaxKind.ComputedPropertyName:
-                return isStringOrNumericLiteralLike(name.expression) ? escapeLeadingUnderscores(name.expression.text) : undefined!; // TODO: GH#18217 Almost all uses of this assume the result to be defined!
+                if (isStringOrNumericLiteralLike(name.expression)) return escapeLeadingUnderscores(name.expression.text);
+                return Debug.fail("Text of property name cannot be read from non-literal-valued ComputedPropertyNames");
             default:
                 return Debug.assertNever(name);
         }
@@ -889,7 +889,7 @@ namespace ts {
         }
 
         const isMissing = nodeIsMissing(errorNode);
-        const pos = isMissing
+        const pos = isMissing || isJsxText(node)
             ? errorNode.pos
             : skipTrivia(sourceFile.text, errorNode.pos);
 
@@ -2122,7 +2122,7 @@ namespace ts {
             : undefined;
     }
 
-    function getSingleInitializerOfVariableStatementOrPropertyDeclaration(node: Node): Expression | undefined {
+    export function getSingleInitializerOfVariableStatementOrPropertyDeclaration(node: Node): Expression | undefined {
         switch (node.kind) {
             case SyntaxKind.VariableStatement:
                 const v = getSingleVariableOfVariableStatement(node);
@@ -3403,7 +3403,7 @@ namespace ts {
         return combinePaths(newDirPath, sourceFilePath);
     }
 
-    export function writeFile(host: EmitHost, diagnostics: DiagnosticCollection, fileName: string, data: string, writeByteOrderMark: boolean, sourceFiles?: ReadonlyArray<SourceFile>) {
+    export function writeFile(host: { writeFile: WriteFileCallback; }, diagnostics: DiagnosticCollection, fileName: string, data: string, writeByteOrderMark: boolean, sourceFiles?: ReadonlyArray<SourceFile>) {
         host.writeFile(fileName, data, writeByteOrderMark, hostErrorMessage => {
             diagnostics.add(createCompilerDiagnostic(Diagnostics.Could_not_write_file_0_Colon_1, fileName, hostErrorMessage));
         }, sourceFiles);
@@ -4565,6 +4565,35 @@ namespace ts {
 
     export function isObjectTypeDeclaration(node: Node): node is ObjectTypeDeclaration {
         return isClassLike(node) || isInterfaceDeclaration(node) || isTypeLiteralNode(node);
+    }
+
+    export function isTypeNodeKind(kind: SyntaxKind) {
+        return (kind >= SyntaxKind.FirstTypeNode && kind <= SyntaxKind.LastTypeNode)
+            || kind === SyntaxKind.AnyKeyword
+            || kind === SyntaxKind.UnknownKeyword
+            || kind === SyntaxKind.NumberKeyword
+            || kind === SyntaxKind.BigIntKeyword
+            || kind === SyntaxKind.ObjectKeyword
+            || kind === SyntaxKind.BooleanKeyword
+            || kind === SyntaxKind.StringKeyword
+            || kind === SyntaxKind.SymbolKeyword
+            || kind === SyntaxKind.ThisKeyword
+            || kind === SyntaxKind.VoidKeyword
+            || kind === SyntaxKind.UndefinedKeyword
+            || kind === SyntaxKind.NullKeyword
+            || kind === SyntaxKind.NeverKeyword
+            || kind === SyntaxKind.ExpressionWithTypeArguments
+            || kind === SyntaxKind.JSDocAllType
+            || kind === SyntaxKind.JSDocUnknownType
+            || kind === SyntaxKind.JSDocNullableType
+            || kind === SyntaxKind.JSDocNonNullableType
+            || kind === SyntaxKind.JSDocOptionalType
+            || kind === SyntaxKind.JSDocFunctionType
+            || kind === SyntaxKind.JSDocVariadicType;
+    }
+
+    export function isAccessExpression(node: Node): node is AccessExpression {
+        return node.kind === SyntaxKind.PropertyAccessExpression || node.kind === SyntaxKind.ElementAccessExpression;
     }
 }
 
@@ -6111,6 +6140,10 @@ namespace ts {
             || kind === SyntaxKind.TemplateTail;
     }
 
+    export function isImportOrExportSpecifier(node: Node): node is ImportSpecifier | ExportSpecifier {
+        return isImportSpecifier(node) || isExportSpecifier(node);
+    }
+
     export function isStringTextContainingNode(node: Node): node is StringLiteral | TemplateLiteralToken {
         return node.kind === SyntaxKind.StringLiteral || isTemplateLiteralKind(node.kind);
     }
@@ -6284,31 +6317,6 @@ namespace ts {
     }
 
     // Type
-
-    function isTypeNodeKind(kind: SyntaxKind) {
-        return (kind >= SyntaxKind.FirstTypeNode && kind <= SyntaxKind.LastTypeNode)
-            || kind === SyntaxKind.AnyKeyword
-            || kind === SyntaxKind.UnknownKeyword
-            || kind === SyntaxKind.NumberKeyword
-            || kind === SyntaxKind.BigIntKeyword
-            || kind === SyntaxKind.ObjectKeyword
-            || kind === SyntaxKind.BooleanKeyword
-            || kind === SyntaxKind.StringKeyword
-            || kind === SyntaxKind.SymbolKeyword
-            || kind === SyntaxKind.ThisKeyword
-            || kind === SyntaxKind.VoidKeyword
-            || kind === SyntaxKind.UndefinedKeyword
-            || kind === SyntaxKind.NullKeyword
-            || kind === SyntaxKind.NeverKeyword
-            || kind === SyntaxKind.ExpressionWithTypeArguments
-            || kind === SyntaxKind.JSDocAllType
-            || kind === SyntaxKind.JSDocUnknownType
-            || kind === SyntaxKind.JSDocNullableType
-            || kind === SyntaxKind.JSDocNonNullableType
-            || kind === SyntaxKind.JSDocOptionalType
-            || kind === SyntaxKind.JSDocFunctionType
-            || kind === SyntaxKind.JSDocVariadicType;
-    }
 
     /**
      * Node test that determines whether a node is a valid type node.
@@ -6837,7 +6845,7 @@ namespace ts {
 
     // TODO: determine what this does before making it public.
     /* @internal */
-    export function isJSDocTag(node: Node): boolean {
+    export function isJSDocTag(node: Node): node is JSDocTag {
         return node.kind >= SyntaxKind.FirstJSDocTagNode && node.kind <= SyntaxKind.LastJSDocTagNode;
     }
 
@@ -7017,6 +7025,7 @@ namespace ts {
         };
     }
 
+    export function formatMessage(_dummy: any, message: DiagnosticMessage, ...args: (string | number | undefined)[]): string;
     export function formatMessage(_dummy: any, message: DiagnosticMessage): string {
         let text = getLocaleSpecificMessage(message);
 
@@ -7684,16 +7693,38 @@ namespace ts {
         return path;
     }
 
+    // check path for these segments: '', '.'. '..'
+    const relativePathSegmentRegExp = /(^|\/)\.{0,2}($|\/)/;
+
     function comparePathsWorker(a: string, b: string, componentComparer: (a: string, b: string) => Comparison) {
         if (a === b) return Comparison.EqualTo;
         if (a === undefined) return Comparison.LessThan;
         if (b === undefined) return Comparison.GreaterThan;
+
+        // NOTE: Performance optimization - shortcut if the root segments differ as there would be no
+        //       need to perform path reduction.
+        const aRoot = a.substring(0, getRootLength(a));
+        const bRoot = b.substring(0, getRootLength(b));
+        const result = compareStringsCaseInsensitive(aRoot, bRoot);
+        if (result !== Comparison.EqualTo) {
+            return result;
+        }
+
+        // NOTE: Performance optimization - shortcut if there are no relative path segments in
+        //       the non-root portion of the path
+        const aRest = a.substring(aRoot.length);
+        const bRest = b.substring(bRoot.length);
+        if (!relativePathSegmentRegExp.test(aRest) && !relativePathSegmentRegExp.test(bRest)) {
+            return componentComparer(aRest, bRest);
+        }
+
+        // The path contains a relative path segment. Normalize the paths and perform a slower component
+        // by component comparison.
         const aComponents = reducePathComponents(getPathComponents(a));
         const bComponents = reducePathComponents(getPathComponents(b));
         const sharedLength = Math.min(aComponents.length, bComponents.length);
-        for (let i = 0; i < sharedLength; i++) {
-            const stringComparer = i === 0 ? compareStringsCaseInsensitive : componentComparer;
-            const result = stringComparer(aComponents[i], bComponents[i]);
+        for (let i = 1; i < sharedLength; i++) {
+            const result = componentComparer(aComponents[i], bComponents[i]);
             if (result !== Comparison.EqualTo) {
                 return result;
             }

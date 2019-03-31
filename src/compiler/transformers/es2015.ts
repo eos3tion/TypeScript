@@ -256,7 +256,7 @@ namespace ts {
         context.onEmitNode = onEmitNode;
         context.onSubstituteNode = onSubstituteNode;
 
-        const typeChecker = compilerOptions.accessorOptimization ? context.getEmitHost().getTypeChecker() : null;
+        const typeChecker = compilerOptions.accessorOptimization ? context.getEmitHost().getTypeChecker!!() : null;
 
         let currentSourceFile: SourceFile;
         let currentText: string;
@@ -1600,7 +1600,7 @@ namespace ts {
             const ancestorFacts = enterSubtree(HierarchyFacts.FunctionExcludes, HierarchyFacts.FunctionIncludes);
             const parameters = visitParameterList(node.parameters, visitor, context);
             const body = transformFunctionBody(node);
-            exitSubtree(ancestorFacts, HierarchyFacts.PropagateNewTargetMask, HierarchyFacts.None);
+            exitSubtree(ancestorFacts, HierarchyFacts.FunctionSubtreeExcludes, HierarchyFacts.None);
             convertedLoopState = savedConvertedLoopState;
             return setOriginalNode(
                 setTextRange(

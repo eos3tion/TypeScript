@@ -28,12 +28,10 @@ var assert: typeof _chai.assert = _chai.assert;
     };
 }
 
-var global: NodeJS.Global = Function("return this").call(undefined);
+var global: NodeJS.Global = Function("return this").call(undefined); // tslint:disable-line:function-constructor
 
 declare var window: {};
-declare var XMLHttpRequest: {
-    new(): XMLHttpRequest;
-};
+declare var XMLHttpRequest: new() => XMLHttpRequest;
 interface XMLHttpRequest {
     readonly readyState: number;
     readonly responseText: string;
@@ -79,6 +77,7 @@ namespace Utils {
         const environment = getExecutionEnvironment();
         switch (environment) {
             case ExecutionEnvironment.Browser:
+                // tslint:disable-next-line:no-eval
                 eval(fileContents);
                 break;
             case ExecutionEnvironment.Node:

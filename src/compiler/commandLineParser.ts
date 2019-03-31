@@ -15,6 +15,7 @@ namespace ts {
         ["es2016", "lib.es2016.d.ts"],
         ["es2017", "lib.es2017.d.ts"],
         ["es2018", "lib.es2018.d.ts"],
+        ["es2019", "lib.es2019.d.ts"],
         ["esnext", "lib.esnext.d.ts"],
         // Host only
         ["dom", "lib.dom.d.ts"],
@@ -38,12 +39,16 @@ namespace ts {
         ["es2017.string", "lib.es2017.string.d.ts"],
         ["es2017.intl", "lib.es2017.intl.d.ts"],
         ["es2017.typedarrays", "lib.es2017.typedarrays.d.ts"],
+        ["es2018.asynciterable", "lib.es2018.asynciterable.d.ts"],
         ["es2018.intl", "lib.es2018.intl.d.ts"],
         ["es2018.promise", "lib.es2018.promise.d.ts"],
         ["es2018.regexp", "lib.es2018.regexp.d.ts"],
-        ["esnext.array", "lib.esnext.array.d.ts"],
-        ["esnext.symbol", "lib.esnext.symbol.d.ts"],
-        ["esnext.asynciterable", "lib.esnext.asynciterable.d.ts"],
+        ["es2019.array", "lib.es2019.array.d.ts"],
+        ["es2019.string", "lib.es2019.string.d.ts"],
+        ["es2019.symbol", "lib.es2019.symbol.d.ts"],
+        ["esnext.array", "lib.es2019.array.d.ts"],
+        ["esnext.symbol", "lib.es2019.symbol.d.ts"],
+        ["esnext.asynciterable", "lib.es2018.asynciterable.d.ts"],
         ["esnext.intl", "lib.esnext.intl.d.ts"],
         ["esnext.bigint", "lib.esnext.bigint.d.ts"]
     ];
@@ -119,6 +124,18 @@ namespace ts {
             category: Diagnostics.Advanced_Options,
             description: Diagnostics.Enable_tracing_of_the_name_resolution_process
         },
+        {
+            name: "diagnostics",
+            type: "boolean",
+            category: Diagnostics.Advanced_Options,
+            description: Diagnostics.Show_diagnostic_information
+        },
+        {
+            name: "extendedDiagnostics",
+            type: "boolean",
+            category: Diagnostics.Advanced_Options,
+            description: Diagnostics.Show_verbose_diagnostic_information
+        },
     ];
 
     /* @internal */
@@ -185,6 +202,7 @@ namespace ts {
                 es2016: ScriptTarget.ES2016,
                 es2017: ScriptTarget.ES2017,
                 es2018: ScriptTarget.ES2018,
+                es2019: ScriptTarget.ES2019,
                 esnext: ScriptTarget.ESNext,
             }),
             affectsSourceFile: true,
@@ -192,7 +210,7 @@ namespace ts {
             paramType: Diagnostics.VERSION,
             showInSimplifiedHelpView: true,
             category: Diagnostics.Basic_Options,
-            description: Diagnostics.Specify_ECMAScript_target_version_Colon_ES3_default_ES5_ES2015_ES2016_ES2017_ES2018_or_ESNEXT,
+            description: Diagnostics.Specify_ECMAScript_target_version_Colon_ES3_default_ES5_ES2015_ES2016_ES2017_ES2018_ES2019_or_ESNEXT,
         },
         {
             name: "module",
@@ -591,18 +609,6 @@ namespace ts {
             type: "string",
             category: Diagnostics.Advanced_Options,
             description: Diagnostics.Specify_the_JSX_factory_function_to_use_when_targeting_react_JSX_emit_e_g_React_createElement_or_h
-        },
-        {
-            name: "diagnostics",
-            type: "boolean",
-            category: Diagnostics.Advanced_Options,
-            description: Diagnostics.Show_diagnostic_information
-        },
-        {
-            name: "extendedDiagnostics",
-            type: "boolean",
-            category: Diagnostics.Advanced_Options,
-            description: Diagnostics.Show_verbose_diagnostic_information
         },
         {
             name: "resolveJsonModule",
@@ -1698,13 +1704,13 @@ namespace ts {
         const files = map(
             filter(
                 configParseResult.fileNames,
-                !configParseResult.configFileSpecs ? _ => false : matchesSpecs(
+                (!configParseResult.configFileSpecs || !configParseResult.configFileSpecs.validatedIncludeSpecs) ? _ => true : matchesSpecs(
                     configFileName,
                     configParseResult.configFileSpecs.validatedIncludeSpecs,
                     configParseResult.configFileSpecs.validatedExcludeSpecs
                 )
             ),
-            f => getRelativePathFromFile(getNormalizedAbsolutePath(configFileName, host.getCurrentDirectory()), f, getCanonicalFileName)
+            f => getRelativePathFromFile(getNormalizedAbsolutePath(configFileName, host.getCurrentDirectory()), getNormalizedAbsolutePath(f, host.getCurrentDirectory()), getCanonicalFileName)
         );
         const optionMap = serializeCompilerOptions(configParseResult.options, { configFilePath: getNormalizedAbsolutePath(configFileName, host.getCurrentDirectory()), useCaseSensitiveFileNames: host.useCaseSensitiveFileNames });
         const config = {
@@ -1718,6 +1724,8 @@ namespace ts {
                 listFiles: undefined,
                 listEmittedFiles: undefined,
                 project: undefined,
+                build: undefined,
+                version: undefined,
             },
             references: map(configParseResult.projectReferences, r => ({ ...r, path: r.originalPath, originalPath: undefined })),
             files: length(files) ? files : undefined,
@@ -1738,24 +1746,24 @@ namespace ts {
     }
 
     function matchesSpecs(path: string, includeSpecs: ReadonlyArray<string> | undefined, excludeSpecs: ReadonlyArray<string> | undefined): (path: string) => boolean {
-        if (!includeSpecs) return _ => false;
+        if (!includeSpecs) return _ => true;
         const patterns = getFileMatcherPatterns(path, excludeSpecs, includeSpecs, sys.useCaseSensitiveFileNames, sys.getCurrentDirectory());
         const excludeRe = patterns.excludePattern && getRegexFromPattern(patterns.excludePattern, sys.useCaseSensitiveFileNames);
         const includeRe = patterns.includeFilePattern && getRegexFromPattern(patterns.includeFilePattern, sys.useCaseSensitiveFileNames);
         if (includeRe) {
             if (excludeRe) {
-                return path => includeRe.test(path) && !excludeRe.test(path);
+                return path => !(includeRe.test(path) && !excludeRe.test(path));
             }
-            return path => includeRe.test(path);
+            return path => !includeRe.test(path);
         }
         if (excludeRe) {
-            return path => !excludeRe.test(path);
+            return path => excludeRe.test(path);
         }
-        return _ => false;
+        return _ => true;
     }
 
     function getCustomTypeMapOfCommandLineOption(optionDefinition: CommandLineOption): Map<string | number> | undefined {
-        if (optionDefinition.type === "string" || optionDefinition.type === "number" || optionDefinition.type === "boolean") {
+        if (optionDefinition.type === "string" || optionDefinition.type === "number" || optionDefinition.type === "boolean" || optionDefinition.type === "object") {
             // this is of a type CommandLineOptionOfPrimitiveType
             return undefined;
         }
@@ -1918,7 +1926,7 @@ namespace ts {
             }
             result.push(`}`);
 
-            return result.join(newLine);
+            return result.join(newLine) + newLine;
         }
     }
 
@@ -1958,7 +1966,7 @@ namespace ts {
 
     function directoryOfCombinedPath(fileName: string, basePath: string) {
         // Use the `getNormalizedAbsolutePath` function to avoid canonicalizing the path, as it must remain noncanonical
-        // until consistient casing errors are reported
+        // until consistent casing errors are reported
         return getDirectoryPath(getNormalizedAbsolutePath(fileName, basePath));
     }
 

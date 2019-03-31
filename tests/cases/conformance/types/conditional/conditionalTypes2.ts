@@ -1,6 +1,8 @@
 // @strict: true
 // @declaration: true
 
+// #27118: Conditional types are now invariant in the check type.
+
 interface Covariant<T> {
     foo: T extends string ? T : number;
 }
@@ -14,13 +16,13 @@ interface Invariant<T> {
 }
 
 function f1<A, B extends A>(a: Covariant<A>, b: Covariant<B>) {
-    a = b;
+    a = b;  // Error
     b = a;  // Error
 }
 
 function f2<A, B extends A>(a: Contravariant<A>, b: Contravariant<B>) {
     a = b;  // Error
-    b = a;
+    b = a;  // Error
 }
 
 function f3<A, B extends A>(a: Invariant<A>, b: Invariant<B>) {
@@ -78,38 +80,6 @@ function f21<T>(x: Extract<Extract<T, Foo>, Bar>, y: Extract<T, Foo & Bar>, z: E
     fooBat(z);  // Error
 }
 
-// Repros from #22860
-
-class Opt<T> {
-    toVector(): Vector<T> {
-        return <any>undefined;
-    }
-}
-
-interface Seq<T> {
-    tail(): Opt<Seq<T>>;
-}
-
-class Vector<T> implements Seq<T> {
-    tail(): Opt<Vector<T>> {
-        return <any>undefined;
-    }
-    partition2<U extends T>(predicate:(v:T)=>v is U): [Vector<U>,Vector<Exclude<T, U>>];
-    partition2(predicate:(x:T)=>boolean): [Vector<T>,Vector<T>];
-    partition2<U extends T>(predicate:(v:T)=>boolean): [Vector<U>,Vector<any>] {
-        return <any>undefined;
-    }
-}
-
-interface A1<T> {
-    bat: B1<A1<T>>;
-}
-
-interface B1<T> extends A1<T> {
-    bat: B1<B1<T>>;
-    boom: T extends any ? true : true
-}
-
 // Repro from #22899
 
 declare function toString1(value: object | Function): string ;
@@ -147,3 +117,65 @@ type B2<T, V> =
 
 type C2<T, V, E> =
     T extends object ? { [Q in keyof T]: C2<T[Q], V, E>; } : T;
+
+// Repro from #28654
+
+type MaybeTrue<T extends { b: boolean }> = true extends T["b"] ? "yes" : "no";
+
+type T0 = MaybeTrue<{ b: never }>     // "no"
+type T1 = MaybeTrue<{ b: false }>;    // "no"
+type T2 = MaybeTrue<{ b: true }>;     // "yes"
+type T3 = MaybeTrue<{ b: boolean }>;  // "yes"
+
+// Repro from #28824
+
+type Union = 'a' | 'b';
+type Product<A extends Union, B> = { f1: A, f2: B};
+type ProductUnion = Product<'a', 0> | Product<'b', 1>;
+
+// {a: "b"; b: "a"}
+type UnionComplement = {
+  [K in Union]: Exclude<Union, K>
+};
+type UCA = UnionComplement['a'];
+type UCB = UnionComplement['b'];
+
+// {a: "a"; b: "b"}
+type UnionComplementComplement = {
+  [K in Union]: Exclude<Union, Exclude<Union, K>>
+};
+type UCCA = UnionComplementComplement['a'];
+type UCCB = UnionComplementComplement['b'];
+
+// {a: Product<'b', 1>; b: Product<'a', 0>}
+type ProductComplement = {
+  [K in Union]: Exclude<ProductUnion, { f1: K }>
+};
+type PCA = ProductComplement['a'];
+type PCB = ProductComplement['b'];
+
+// {a: Product<'a', 0>; b: Product<'b', 1>}
+type ProductComplementComplement = {
+  [K in Union]: Exclude<ProductUnion, Exclude<ProductUnion, { f1: K }>>
+};
+type PCCA = ProductComplementComplement['a'];
+type PCCB = ProductComplementComplement['b'];
+
+// Repros from #27118
+
+type MyElement<A> = [A] extends [[infer E]] ? E : never;
+function oops<A, B extends A>(arg: MyElement<A>): MyElement<B> {
+    return arg;  // Unsound, should be error
+}
+
+type MyAcceptor<A> = [A] extends [[infer E]] ? (arg: E) => void : never;
+function oops2<A, B extends A>(arg: MyAcceptor<B>): MyAcceptor<A> {
+    return arg;  // Unsound, should be error
+}
+
+type Dist<T> = T extends number ? number : string;
+type Aux<A extends { a: unknown }> = A["a"] extends number ? number : string;
+type Nondist<T> = Aux<{a: T}>;
+function oops3<T>(arg: Dist<T>): Nondist<T> {
+    return arg;  // Unsound, should be error
+}

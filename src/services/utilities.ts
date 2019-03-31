@@ -246,6 +246,10 @@ namespace ts {
         return isLabelOfLabeledStatement(node) || isJumpStatementTarget(node);
     }
 
+    export function isTagName(node: Node): boolean {
+        return isJSDocTag(node.parent) && node.parent.tagName === node;
+    }
+
     export function isRightSideOfQualifiedName(node: Node) {
         return node.parent.kind === SyntaxKind.QualifiedName && (<QualifiedName>node.parent).right === node;
     }
@@ -1212,6 +1216,7 @@ namespace ts {
 
     export const typeKeywords: ReadonlyArray<SyntaxKind> = [
         SyntaxKind.AnyKeyword,
+        SyntaxKind.BigIntKeyword,
         SyntaxKind.BooleanKeyword,
         SyntaxKind.FalseKeyword,
         SyntaxKind.KeyOfKeyword,
@@ -1277,11 +1282,11 @@ namespace ts {
         return !!compilerOptions.module || compilerOptions.target! >= ScriptTarget.ES2015 || !!compilerOptions.noEmit;
     }
 
-    export function hostUsesCaseSensitiveFileNames(host: LanguageServiceHost): boolean {
+    export function hostUsesCaseSensitiveFileNames(host: { useCaseSensitiveFileNames?(): boolean; }): boolean {
         return host.useCaseSensitiveFileNames ? host.useCaseSensitiveFileNames() : false;
     }
 
-    export function hostGetCanonicalFileName(host: LanguageServiceHost): GetCanonicalFileName {
+    export function hostGetCanonicalFileName(host: { useCaseSensitiveFileNames?(): boolean; }): GetCanonicalFileName {
         return createGetCanonicalFileName(hostUsesCaseSensitiveFileNames(host));
     }
 
@@ -1310,7 +1315,7 @@ namespace ts {
     }
 
     export function getQuotePreference(sourceFile: SourceFile, preferences: UserPreferences): QuotePreference {
-        if (preferences.quotePreference) {
+        if (preferences.quotePreference && preferences.quotePreference !== "auto") {
             return preferences.quotePreference === "single" ? QuotePreference.Single : QuotePreference.Double;
         }
         else {
@@ -1628,9 +1633,7 @@ namespace ts {
     }
 
     export function isImportOrExportSpecifierName(location: Node): location is Identifier {
-        return !!location.parent &&
-            (location.parent.kind === SyntaxKind.ImportSpecifier || location.parent.kind === SyntaxKind.ExportSpecifier) &&
-            (<ImportOrExportSpecifier>location.parent).propertyName === location;
+        return !!location.parent && isImportOrExportSpecifier(location.parent) && location.parent.propertyName === location;
     }
 
     /**
@@ -1865,15 +1868,18 @@ namespace ts {
         if (/^\d+$/.test(text)) {
             return text;
         }
+        // Editors can pass in undefined or empty string - we want to infer the preference in those cases.
+        const quotePreference = preferences.quotePreference || "auto";
         const quoted = JSON.stringify(text);
-        switch (preferences.quotePreference) {
-            case undefined:
+        switch (quotePreference) {
+            // TODO use getQuotePreference to infer the actual quote style.
+            case "auto":
             case "double":
                 return quoted;
             case "single":
                 return `'${stripQuotes(quoted).replace("'", "\\'").replace('\\"', '"')}'`;
             default:
-                return Debug.assertNever(preferences.quotePreference);
+                return Debug.assertNever(quotePreference);
         }
     }
 

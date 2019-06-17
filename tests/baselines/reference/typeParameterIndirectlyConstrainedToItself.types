@@ -38,7 +38,7 @@ type Foo<T> = [T] extends [number] ? {} : {};
 >Foo : Foo<T>
 
 function foo<S extends Foo<S>>() {}
->foo : <S>() => void
+>foo : <S extends Foo<S>>() => void
 
 // Repro from #25740
 

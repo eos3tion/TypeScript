@@ -1,4 +1,4 @@
-// tslint:disable no-unnecessary-qualifier
+/* eslint-disable @typescript-eslint/no-unnecessary-qualifier */
 
 /**
  * Declaration module describing the TypeScript Server protocol
@@ -93,6 +93,8 @@ namespace ts.server.protocol {
         /* @internal */
         ApplyChangedToOpenFiles = "applyChangedToOpenFiles",
         UpdateOpen = "updateOpen",
+        /* @internal */
+        EncodedSyntacticClassificationsFull = "encodedSyntacticClassifications-full",
         /* @internal */
         EncodedSemanticClassificationsFull = "encodedSemanticClassifications-full",
         /* @internal */
@@ -631,7 +633,7 @@ namespace ts.server.protocol {
     }
 
     export interface OrganizeImportsResponse extends Response {
-        body: ReadonlyArray<FileCodeEdits>;
+        body: readonly FileCodeEdits[];
     }
 
     export interface GetEditsForFileRenameRequest extends Request {
@@ -646,7 +648,7 @@ namespace ts.server.protocol {
     }
 
     export interface GetEditsForFileRenameResponse extends Response {
-        body: ReadonlyArray<FileCodeEdits>;
+        body: readonly FileCodeEdits[];
     }
 
     /**
@@ -715,7 +717,7 @@ namespace ts.server.protocol {
         /**
          * Errorcodes we want to get the fixes for.
          */
-        errorCodes: ReadonlyArray<number>;
+        errorCodes: readonly number[];
     }
 
     export interface GetCombinedCodeFixRequestArgs {
@@ -765,6 +767,29 @@ namespace ts.server.protocol {
     }
 
     /**
+     * A request to get encoded Syntactic classifications for a span in the file
+     */
+    /** @internal */
+    export interface EncodedSyntacticClassificationsRequest extends FileRequest {
+        arguments: EncodedSyntacticClassificationsRequestArgs;
+    }
+
+    /**
+     * Arguments for EncodedSyntacticClassificationsRequest request.
+     */
+    /** @internal */
+    export interface EncodedSyntacticClassificationsRequestArgs extends FileRequestArgs {
+        /**
+         * Start position of the span.
+         */
+        start: number;
+        /**
+         * Length of the span.
+         */
+        length: number;
+    }
+
+    /**
      * A request to get encoded semantic classifications for a span in the file
      */
     /** @internal */
@@ -775,6 +800,7 @@ namespace ts.server.protocol {
     /**
      * Arguments for EncodedSemanticClassificationsRequest request.
      */
+    /** @internal */
     export interface EncodedSemanticClassificationsRequestArgs extends FileRequestArgs {
         /**
          * Start position of the span.
@@ -872,8 +898,16 @@ namespace ts.server.protocol {
         file: string;
     }
 
+    export interface TextSpanWithContext extends TextSpan {
+        contextStart?: Location;
+        contextEnd?: Location;
+    }
+
+    export interface FileSpanWithContext extends FileSpan, TextSpanWithContext {
+    }
+
     export interface DefinitionInfoAndBoundSpan {
-        definitions: ReadonlyArray<FileSpan>;
+        definitions: readonly FileSpanWithContext[];
         textSpan: TextSpan;
     }
 
@@ -881,25 +915,28 @@ namespace ts.server.protocol {
      * Definition response message.  Gives text range for definition.
      */
     export interface DefinitionResponse extends Response {
-        body?: FileSpan[];
+        body?: FileSpanWithContext[];
     }
 
-    export interface DefinitionInfoAndBoundSpanReponse extends Response {
+    export interface DefinitionInfoAndBoundSpanResponse extends Response {
         body?: DefinitionInfoAndBoundSpan;
     }
+
+    /** @deprecated Use `DefinitionInfoAndBoundSpanResponse` instead. */
+    export type DefinitionInfoAndBoundSpanReponse = DefinitionInfoAndBoundSpanResponse;
 
     /**
      * Definition response message.  Gives text range for definition.
      */
     export interface TypeDefinitionResponse extends Response {
-        body?: FileSpan[];
+        body?: FileSpanWithContext[];
     }
 
     /**
      * Implementation response message.  Gives text range for implementations.
      */
     export interface ImplementationResponse extends Response {
-        body?: FileSpan[];
+        body?: FileSpanWithContext[];
     }
 
     /**
@@ -942,7 +979,7 @@ namespace ts.server.protocol {
     }
 
     /** @deprecated */
-    export interface OccurrencesResponseItem extends FileSpan {
+    export interface OccurrencesResponseItem extends FileSpanWithContext {
         /**
          * True if the occurrence is a write location, false otherwise.
          */
@@ -972,7 +1009,7 @@ namespace ts.server.protocol {
     /**
      * Span augmented with extra information that denotes the kind of the highlighting to be used for span.
      */
-    export interface HighlightSpan extends TextSpan {
+    export interface HighlightSpan extends TextSpanWithContext {
         kind: HighlightSpanKind;
     }
 
@@ -1007,7 +1044,7 @@ namespace ts.server.protocol {
         command: CommandTypes.References;
     }
 
-    export interface ReferencesResponseItem extends FileSpan {
+    export interface ReferencesResponseItem extends FileSpanWithContext {
         /** Text of line containing the reference.  Including this
          *  with the response avoids latency of editor loading files
          * to show text of reference line (the server already has
@@ -1033,7 +1070,7 @@ namespace ts.server.protocol {
         /**
          * The file locations referencing the symbol.
          */
-        refs: ReadonlyArray<ReferencesResponseItem>;
+        refs: readonly ReferencesResponseItem[];
 
         /**
          * The name of the symbol.
@@ -1091,7 +1128,7 @@ namespace ts.server.protocol {
 
     /* @internal */
     export interface RenameFullResponse extends Response {
-        readonly body: ReadonlyArray<RenameLocation>;
+        readonly body: readonly RenameLocation[];
     }
 
     /**
@@ -1150,7 +1187,7 @@ namespace ts.server.protocol {
         locs: RenameTextSpan[];
     }
 
-    export interface RenameTextSpan extends TextSpan {
+    export interface RenameTextSpan extends TextSpanWithContext {
         readonly prefixText?: string;
         readonly suffixText?: string;
     }
@@ -1164,7 +1201,7 @@ namespace ts.server.protocol {
         /**
          * An array of span groups (one per file) that refer to the item to be renamed.
          */
-        locs: ReadonlyArray<SpanGroup>;
+        locs: readonly SpanGroup[];
     }
 
     /**
@@ -1842,8 +1879,8 @@ namespace ts.server.protocol {
     }
 
     export interface CombinedCodeActions {
-        changes: ReadonlyArray<FileCodeEdits>;
-        commands?: ReadonlyArray<{}>;
+        changes: readonly FileCodeEdits[];
+        commands?: readonly {}[];
     }
 
     export interface CodeFixAction extends CodeAction {
@@ -2072,7 +2109,7 @@ namespace ts.server.protocol {
         readonly isGlobalCompletion: boolean;
         readonly isMemberCompletion: boolean;
         readonly isNewIdentifierLocation: boolean;
-        readonly entries: ReadonlyArray<CompletionEntry>;
+        readonly entries: readonly CompletionEntry[];
     }
 
     export interface CompletionDetailsResponse extends Response {
@@ -2180,9 +2217,9 @@ namespace ts.server.protocol {
     export type SignatureHelpTriggerCharacter = "," | "(" | "<";
     export type SignatureHelpRetriggerCharacter = SignatureHelpTriggerCharacter | ")";
 
-      /**
-       * Arguments of a signature help request.
-       */
+    /**
+     * Arguments of a signature help request.
+     */
     export interface SignatureHelpRequestArgs extends FileLocationRequestArgs {
         /**
          * Reason why signature help was invoked.
@@ -2578,8 +2615,17 @@ namespace ts.server.protocol {
     }
 
     /*@internal*/
-    export type AnyEvent = RequestCompletedEvent | DiagnosticEvent | ConfigFileDiagnosticEvent | ProjectLanguageServiceStateEvent | TelemetryEvent |
-        ProjectsUpdatedInBackgroundEvent | ProjectLoadingStartEvent | ProjectLoadingFinishEvent | SurveyReadyEvent | LargeFileReferencedEvent;
+    export type AnyEvent =
+        RequestCompletedEvent
+        | DiagnosticEvent
+        | ConfigFileDiagnosticEvent
+        | ProjectLanguageServiceStateEvent
+        | TelemetryEvent
+        | ProjectsUpdatedInBackgroundEvent
+        | ProjectLoadingStartEvent
+        | ProjectLoadingFinishEvent
+        | SurveyReadyEvent
+        | LargeFileReferencedEvent;
 
     /**
      * Arguments for reload request.
@@ -2840,14 +2886,15 @@ namespace ts.server.protocol {
         payload: TypingsInstalledTelemetryEventPayload;
     }
 
-/* __GDPR__
-   "typingsinstalled" : {
-        "${include}": ["${TypeScriptCommonProperties}"],
-        "installedPackages": { "classification": "PublicNonPersonalData", "purpose": "FeatureInsight" },
-        "installSuccess": { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
-        "typingsInstallerVersion": { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-   }
- */
+    /*
+     * __GDPR__
+     * "typingsinstalled" : {
+     *     "${include}": ["${TypeScriptCommonProperties}"],
+     *     "installedPackages": { "classification": "PublicNonPersonalData", "purpose": "FeatureInsight" },
+     *     "installSuccess": { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+     *     "typingsInstallerVersion": { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
+     * }
+     */
     export interface TypingsInstalledTelemetryEventPayload {
         /**
          * Comma separated list of installed typing packages
@@ -2885,7 +2932,7 @@ namespace ts.server.protocol {
         /**
          * list of packages to install
          */
-        packages: ReadonlyArray<string>;
+        packages: readonly string[];
     }
 
     export interface BeginInstallTypesEventBody extends InstallTypesEventBody {
@@ -2910,6 +2957,12 @@ namespace ts.server.protocol {
         None = "None",
         Block = "Block",
         Smart = "Smart",
+    }
+
+    export enum SemicolonPreference {
+        Ignore = "ignore",
+        Insert = "insert",
+        Remove = "remove",
     }
 
     export interface EditorSettings {
@@ -2938,6 +2991,7 @@ namespace ts.server.protocol {
         placeOpenBraceOnNewLineForFunctions?: boolean;
         placeOpenBraceOnNewLineForControlBlocks?: boolean;
         insertSpaceBeforeTypeAnnotation?: boolean;
+        semicolons?: SemicolonPreference;
     }
 
     export interface UserPreferences {
@@ -2953,6 +3007,12 @@ namespace ts.server.protocol {
          * For those entries, The `insertText` and `replacementSpan` properties will be set to change from `.x` property access to `["x"]`.
          */
         readonly includeCompletionsWithInsertText?: boolean;
+        /**
+         * Unless this option is `false`, or `includeCompletionsWithInsertText` is not enabled,
+         * member completion lists triggered with `.` will include entries on potentially-null and potentially-undefined
+         * values, with insertion text to replace preceding `.` tokens with `?.`.
+         */
+        readonly includeAutomaticOptionalChainCompletions?: boolean;
         readonly importModuleSpecifierPreference?: "relative" | "non-relative";
         readonly allowTextChangesInNewFiles?: boolean;
         readonly lazyConfiguredProjectsFromExternalProject?: boolean;
@@ -3023,6 +3083,7 @@ namespace ts.server.protocol {
         strictNullChecks?: boolean;
         suppressExcessPropertyErrors?: boolean;
         suppressImplicitAnyIndexErrors?: boolean;
+        useDefineForClassFields?: boolean;
         target?: ScriptTarget | ts.ScriptTarget;
         traceResolution?: boolean;
         resolveJsonModule?: boolean;

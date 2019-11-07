@@ -1575,7 +1575,7 @@ namespace ts {
                         break;
 
                     default:
-                        Debug.failBadSyntaxKind(node);
+                        Debug.failBadSyntaxKind(member, currentSourceFile && currentSourceFile.fileName);
                         break;
                 }
             }
@@ -1639,17 +1639,22 @@ namespace ts {
         function transformClassMethodDeclarationToStatement(receiver: LeftHandSideExpression, member: MethodDeclaration, container: Node) {
             const commentRange = getCommentRange(member);
             const sourceMapRange = getSourceMapRange(member);
-            const memberName = createMemberAccessForPropertyName(receiver, visitNode(member.name, visitor, isPropertyName), /*location*/ member.name);
             const memberFunction = transformFunctionLikeToExpression(member, /*location*/ member, /*name*/ undefined, container);
+            let e: Expression;
+            if (context.getCompilerOptions().useDefineForClassFields) {
+                const propertyName = visitNode(member.name, visitor, isPropertyName);
+                const name = isComputedPropertyName(propertyName) ? propertyName.expression
+                    : isIdentifier(propertyName) ? createStringLiteral(unescapeLeadingUnderscores(propertyName.escapedText))
+                    : propertyName;
+                e = createObjectDefinePropertyCall(receiver, name, createPropertyDescriptor({ value: memberFunction, enumerable: false, writable: true, configurable: true }));
+            }
+            else {
+                const memberName = createMemberAccessForPropertyName(receiver, visitNode(member.name, visitor, isPropertyName), /*location*/ member.name);
+                e = createAssignment(memberName, memberFunction);
+            }
             setEmitFlags(memberFunction, EmitFlags.NoComments);
             setSourceMapRange(memberFunction, sourceMapRange);
-
-            const statement = setTextRange(
-                createExpressionStatement(
-                    createAssignment(memberName, memberFunction)
-                ),
-                /*location*/ member
-            );
+            const statement = setTextRange(createExpressionStatement(e), /*location*/ member);
 
             setOriginalNode(statement, member);
             setCommentRange(statement, commentRange);
@@ -2186,7 +2191,7 @@ namespace ts {
             return visitEachChild(node, visitor, context);
         }
 
-        function getRangeUnion(declarations: ReadonlyArray<Node>): TextRange {
+        function getRangeUnion(declarations: readonly Node[]): TextRange {
             // declarations may not be sorted by position.
             // pos should be the minimum* position over all nodes (that's not -1), end should be the maximum end over all nodes.
             let pos = -1, end = -1;
@@ -3938,8 +3943,11 @@ namespace ts {
             // [source]
             //      [a, ...b, c]
             //
+            // [output (downlevelIteration)]
+            //      __spread([a], b, [c])
+            //
             // [output]
-            //      [a].concat(b, [c])
+            //      __spreadArrays([a], b, [c])
 
             // Map spans of spread expressions into their expressions and spans of other
             // expressions into an array literal.
@@ -3953,10 +3961,7 @@ namespace ts {
             if (compilerOptions.downlevelIteration) {
                 if (segments.length === 1) {
                     const firstSegment = segments[0];
-                    if (isCallExpression(firstSegment)
-                        && isIdentifier(firstSegment.expression)
-                        && (getEmitFlags(firstSegment.expression) & EmitFlags.HelperName)
-                        && firstSegment.expression.escapedText === "___spread") {
+                    if (isCallToHelper(firstSegment, "___spread" as __String)) {
                         return segments[0];
                     }
                 }
@@ -3965,15 +3970,31 @@ namespace ts {
             }
             else {
                 if (segments.length === 1) {
-                    const firstElement = elements[0];
-                    return needsUniqueCopy && isSpreadElement(firstElement) && firstElement.expression.kind !== SyntaxKind.ArrayLiteralExpression
-                        ? createArraySlice(segments[0])
-                        : segments[0];
+                    const firstSegment = segments[0];
+                    if (!needsUniqueCopy
+                        || isPackedArrayLiteral(firstSegment)
+                        || isCallToHelper(firstSegment, "___spreadArrays" as __String)) {
+                        return segments[0];
+                    }
                 }
 
-                // Rewrite using the pattern <segment0>.concat(<segment1>, <segment2>, ...)
-                return createArrayConcat(segments.shift()!, segments);
+                return createSpreadArraysHelper(context, segments);
             }
+        }
+
+        function isPackedElement(node: Expression) {
+            return !isOmittedExpression(node);
+        }
+
+        function isPackedArrayLiteral(node: Expression) {
+            return isArrayLiteralExpression(node) && every(node.elements, isPackedElement);
+        }
+
+        function isCallToHelper(firstSegment: Expression, helperName: __String) {
+            return isCallExpression(firstSegment)
+                && isIdentifier(firstSegment.expression)
+                && (getEmitFlags(firstSegment.expression) & EmitFlags.HelperName)
+                && firstSegment.expression.escapedText === helperName;
         }
 
         function partitionSpread(node: Expression) {
@@ -4096,18 +4117,21 @@ namespace ts {
          *
          * @param node The ES6 template literal.
          */
-        function getRawLiteral(node: LiteralLikeNode) {
+        function getRawLiteral(node: TemplateLiteralLikeNode) {
             // Find original source text, since we need to emit the raw strings of the tagged template.
             // The raw strings contain the (escaped) strings of what the user wrote.
             // Examples: `\n` is converted to "\\n", a template string with a newline to "\n".
-            let text = getSourceTextOfNodeFromSourceFile(currentSourceFile, node);
+            let text = node.rawText;
+            if (text === undefined) {
+                text = getSourceTextOfNodeFromSourceFile(currentSourceFile, node);
 
-            // text contains the original source, it will also contain quotes ("`"), dolar signs and braces ("${" and "}"),
-            // thus we need to remove those characters.
-            // First template piece starts with "`", others with "}"
-            // Last template piece ends with "`", others with "${"
-            const isLast = node.kind === SyntaxKind.NoSubstitutionTemplateLiteral || node.kind === SyntaxKind.TemplateTail;
-            text = text.substring(1, text.length - (isLast ? 1 : 2));
+                // text contains the original source, it will also contain quotes ("`"), dolar signs and braces ("${" and "}"),
+                // thus we need to remove those characters.
+                // First template piece starts with "`", others with "}"
+                // Last template piece ends with "`", others with "${"
+                const isLast = node.kind === SyntaxKind.NoSubstitutionTemplateLiteral || node.kind === SyntaxKind.TemplateTail;
+                text = text.substring(1, text.length - (isLast ? 1 : 2));
+            }
 
             // Newline normalization:
             // ES6 Spec 11.8.6.1 - Static Semantics of TV's and TRV's
@@ -4209,10 +4233,8 @@ namespace ts {
          * Visits the `super` keyword
          */
         function visitSuperKeyword(isExpressionOfCall: boolean): LeftHandSideExpression {
-            return hierarchyFacts & HierarchyFacts.NonStaticClassElement
-                && !isExpressionOfCall
-                ? createPropertyAccess(createFileLevelUniqueName("_super"), "prototype")
-                : createFileLevelUniqueName("_super");
+            return hierarchyFacts & HierarchyFacts.NonStaticClassElement && !isExpressionOfCall ? createPropertyAccess(createFileLevelUniqueName("_super"), "prototype") :
+                createFileLevelUniqueName("_super");
         }
 
         function visitMetaProperty(node: MetaProperty) {
@@ -4442,7 +4464,7 @@ namespace ts {
     function createExtendsHelper(context: TransformationContext, name: Identifier) {
         context.requestEmitHelper(extendsHelper);
         return createCall(
-            getHelperName("__extends"),
+            getUnscopedHelperName("__extends"),
             /*typeArguments*/ undefined,
             [
                 name,
@@ -4454,7 +4476,7 @@ namespace ts {
     function createTemplateObjectHelper(context: TransformationContext, cooked: ArrayLiteralExpression, raw: ArrayLiteralExpression) {
         context.requestEmitHelper(templateObjectHelper);
         return createCall(
-            getHelperName("__makeTemplateObject"),
+            getUnscopedHelperName("__makeTemplateObject"),
             /*typeArguments*/ undefined,
             [
                 cooked,
@@ -4465,6 +4487,7 @@ namespace ts {
 
     export const extendsHelper: UnscopedEmitHelper = {
         name: "typescript:extends",
+        importName: "__extends",
         scoped: false,
         priority: 0,
         text: `
@@ -4486,6 +4509,7 @@ namespace ts {
 
     export const templateObjectHelper: UnscopedEmitHelper = {
         name: "typescript:makeTemplateObject",
+        importName: "__makeTemplateObject",
         scoped: false,
         priority: 0,
         text: `

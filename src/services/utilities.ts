@@ -6,7 +6,7 @@ interface PromiseConstructor {
     all<T>(values: (T | PromiseLike<T>)[]): Promise<T[]>;
 }
 /* @internal */
-declare var Promise: PromiseConstructor;
+declare let Promise: PromiseConstructor;
 
 // These utilities are common to multiple language service features.
 /* @internal */
@@ -267,7 +267,7 @@ namespace ts {
             isFunctionLike(node.parent) && (<FunctionLikeDeclaration>node.parent).name === node;
     }
 
-    export function isLiteralNameOfPropertyDeclarationOrIndexAccess(node: StringLiteral | NumericLiteral): boolean {
+    export function isLiteralNameOfPropertyDeclarationOrIndexAccess(node: StringLiteral | NumericLiteral | NoSubstitutionTemplateLiteral): boolean {
         switch (node.parent.kind) {
             case SyntaxKind.PropertyDeclaration:
             case SyntaxKind.PropertySignature:
@@ -353,8 +353,13 @@ namespace ts {
             case SyntaxKind.MethodDeclaration:
             case SyntaxKind.MethodSignature:
                 return ScriptElementKind.memberFunctionElement;
+            case SyntaxKind.PropertyAssignment:
+                const {initializer} = node as PropertyAssignment;
+                return isFunctionLike(initializer) ? ScriptElementKind.memberFunctionElement : ScriptElementKind.memberVariableElement;
             case SyntaxKind.PropertyDeclaration:
             case SyntaxKind.PropertySignature:
+            case SyntaxKind.ShorthandPropertyAssignment:
+            case SyntaxKind.SpreadAssignment:
                 return ScriptElementKind.memberVariableElement;
             case SyntaxKind.IndexSignature: return ScriptElementKind.indexSignatureElement;
             case SyntaxKind.ConstructSignature: return ScriptElementKind.constructSignatureElement;
@@ -507,7 +512,8 @@ namespace ts {
                 if (!(<NewExpression>n).arguments) {
                     return true;
                 }
-            // falls through
+                // falls through
+
             case SyntaxKind.CallExpression:
             case SyntaxKind.ParenthesizedExpression:
             case SyntaxKind.ParenthesizedType:
@@ -743,7 +749,7 @@ namespace ts {
         return findPrecedingToken(position, file);
     }
 
-    export function findNextToken(previousToken: Node, parent: Node, sourceFile: SourceFile): Node | undefined {
+    export function findNextToken(previousToken: Node, parent: Node, sourceFile: SourceFileLike): Node | undefined {
         return find(parent);
 
         function find(n: Node): Node | undefined {
@@ -751,7 +757,7 @@ namespace ts {
                 // this is token that starts at the end of previous token - return it
                 return n;
             }
-            return firstDefined(n.getChildren(), child => {
+            return firstDefined(n.getChildren(sourceFile), child => {
                 const shouldDiveInChildNode =
                     // previous token is enclosed somewhere in the child
                     (child.pos <= previousToken.pos && child.end > previousToken.end) ||
@@ -950,6 +956,12 @@ namespace ts {
         }
     }
 
+    export function removeOptionality(type: Type, isOptionalExpression: boolean, isOptionalChain: boolean) {
+        return isOptionalExpression ? type.getNonNullableType() :
+            isOptionalChain ? type.getNonOptionalType() :
+            type;
+    }
+
     export function isPossiblyTypeArgumentPosition(token: Node, sourceFile: SourceFile, checker: TypeChecker): boolean {
         const info = getPossibleTypeArgumentsInfo(token, sourceFile);
         return info !== undefined && (isPartOfTypeNode(info.called) ||
@@ -957,8 +969,12 @@ namespace ts {
             isPossiblyTypeArgumentPosition(info.called, sourceFile, checker));
     }
 
-    export function getPossibleGenericSignatures(called: Expression, typeArgumentCount: number, checker: TypeChecker): ReadonlyArray<Signature> {
-        const type = checker.getTypeAtLocation(called);
+    export function getPossibleGenericSignatures(called: Expression, typeArgumentCount: number, checker: TypeChecker): readonly Signature[] {
+        let type = checker.getTypeAtLocation(called);
+        if (isOptionalChain(called.parent)) {
+            type = removeOptionality(type, !!called.parent.questionDotToken, /*isOptionalChain*/ true);
+        }
+
         const signatures = isNewExpression(called.parent) ? type.getConstructSignatures() : type.getCallSignatures();
         return signatures.filter(candidate => !!candidate.typeParameters && candidate.typeParameters.length >= typeArgumentCount);
     }
@@ -967,6 +983,11 @@ namespace ts {
         readonly called: Identifier;
         readonly nTypeArguments: number;
     }
+
+    export interface PossibleProgramFileInfo {
+        ProgramFiles?: string[];
+    }
+
     // Get info for an expression like `f <` that may be the start of type arguments.
     export function getPossibleTypeArgumentsInfo(tokenIn: Node, sourceFile: SourceFile): PossibleTypeArgumentInfo | undefined {
         let token: Node | undefined = tokenIn;
@@ -982,6 +1003,9 @@ namespace ts {
                 case SyntaxKind.LessThanToken:
                     // Found the beginning of the generic argument expression
                     token = findPrecedingToken(token.getFullStart(), sourceFile);
+                    if (token && token.kind === SyntaxKind.QuestionDotToken) {
+                        token = findPrecedingToken(token.getFullStart(), sourceFile);
+                    }
                     if (!token || !isIdentifier(token)) return undefined;
                     if (!remainingLessThanTokens) {
                         return isDeclarationName(token) ? undefined : { called: token, nTypeArguments };
@@ -1028,6 +1052,7 @@ namespace ts {
                     break;
 
                 case SyntaxKind.EqualsGreaterThanToken:
+                    // falls through
 
                 case SyntaxKind.Identifier:
                 case SyntaxKind.StringLiteral:
@@ -1035,6 +1060,7 @@ namespace ts {
                 case SyntaxKind.BigIntLiteral:
                 case SyntaxKind.TrueKeyword:
                 case SyntaxKind.FalseKeyword:
+                    // falls through
 
                 case SyntaxKind.TypeOfKeyword:
                 case SyntaxKind.ExtendsKeyword:
@@ -1190,8 +1216,8 @@ namespace ts {
         return !!range && shouldBeReference === tripleSlashDirectivePrefixRegex.test(sourceFile.text.substring(range.pos, range.end));
     }
 
-    export function createTextSpanFromNode(node: Node, sourceFile?: SourceFile): TextSpan {
-        return createTextSpanFromBounds(node.getStart(sourceFile), node.getEnd());
+    export function createTextSpanFromNode(node: Node, sourceFile?: SourceFile, endNode?: Node): TextSpan {
+        return createTextSpanFromBounds(node.getStart(sourceFile), (endNode || node).getEnd());
     }
 
     export function createTextRangeFromNode(node: Node, sourceFile: SourceFile): TextRange {
@@ -1214,7 +1240,7 @@ namespace ts {
         return { span, newText };
     }
 
-    export const typeKeywords: ReadonlyArray<SyntaxKind> = [
+    export const typeKeywords: readonly SyntaxKind[] = [
         SyntaxKind.AnyKeyword,
         SyntaxKind.BigIntKeyword,
         SyntaxKind.BooleanKeyword,
@@ -1224,6 +1250,7 @@ namespace ts {
         SyntaxKind.NullKeyword,
         SyntaxKind.NumberKeyword,
         SyntaxKind.ObjectKeyword,
+        SyntaxKind.ReadonlyKeyword,
         SyntaxKind.StringKeyword,
         SyntaxKind.SymbolKeyword,
         SyntaxKind.TrueKeyword,
@@ -1290,11 +1317,11 @@ namespace ts {
         return createGetCanonicalFileName(hostUsesCaseSensitiveFileNames(host));
     }
 
-    export function makeImportIfNecessary(defaultImport: Identifier | undefined, namedImports: ReadonlyArray<ImportSpecifier> | undefined, moduleSpecifier: string, quotePreference: QuotePreference): ImportDeclaration | undefined {
+    export function makeImportIfNecessary(defaultImport: Identifier | undefined, namedImports: readonly ImportSpecifier[] | undefined, moduleSpecifier: string, quotePreference: QuotePreference): ImportDeclaration | undefined {
         return defaultImport || namedImports && namedImports.length ? makeImport(defaultImport, namedImports, moduleSpecifier, quotePreference) : undefined;
     }
 
-    export function makeImport(defaultImport: Identifier | undefined, namedImports: ReadonlyArray<ImportSpecifier> | undefined, moduleSpecifier: string | Expression, quotePreference: QuotePreference): ImportDeclaration {
+    export function makeImport(defaultImport: Identifier | undefined, namedImports: readonly ImportSpecifier[] | undefined, moduleSpecifier: string | Expression, quotePreference: QuotePreference): ImportDeclaration {
         return createImportDeclaration(
             /*decorators*/ undefined,
             /*modifiers*/ undefined,
@@ -1431,6 +1458,25 @@ namespace ts {
     export function documentSpansEqual(a: DocumentSpan, b: DocumentSpan): boolean {
         return a.fileName === b.fileName && textSpansEqual(a.textSpan, b.textSpan);
     }
+
+    /**
+     * Iterates through 'array' by index and performs the callback on each element of array until the callback
+     * returns a truthy value, then returns that value.
+     * If no such value is found, the callback is applied to each element of array and undefined is returned.
+     */
+    export function forEachUnique<T, U>(array: readonly T[] | undefined, callback: (element: T, index: number) => U): U | undefined {
+        if (array) {
+            for (let i = 0; i < array.length; i++) {
+                if (array.indexOf(array[i]) === i) {
+                    const result = callback(array[i], i);
+                    if (result) {
+                        return result;
+                    }
+                }
+            }
+        }
+        return undefined;
+    }
 }
 
 // Display-part writer helpers
@@ -1479,6 +1525,8 @@ namespace ts {
             getColumn: () => 0,
             getLine: () => 0,
             isAtStartOfLine: () => false,
+            hasTrailingWhitespace: () => false,
+            hasTrailingComment: () => false,
             rawWrite: notImplemented,
             getIndent: () => indent,
             increaseIndent: () => { indent++; },
@@ -1636,23 +1684,6 @@ namespace ts {
         return !!location.parent && isImportOrExportSpecifier(location.parent) && location.parent.propertyName === location;
     }
 
-    /**
-     * Strip off existed single quotes or double quotes from a given string
-     *
-     * @return non-quoted string
-     */
-    export function stripQuotes(name: string) {
-        const length = name.length;
-        if (length >= 2 && name.charCodeAt(0) === name.charCodeAt(length - 1) && startsWithQuote(name)) {
-            return name.substring(1, length - 1);
-        }
-        return name;
-    }
-
-    export function startsWithQuote(name: string): boolean {
-        return isSingleOrDoubleQuote(name.charCodeAt(0));
-    }
-
     export function scriptKindIs(fileName: string, host: LanguageServiceHost, ...scriptKinds: ScriptKind[]): boolean {
         const scriptKind = getScriptKind(fileName, host);
         return some(scriptKinds, k => k === scriptKind);
@@ -1751,8 +1782,8 @@ namespace ts {
 
     function getSynthesizedDeepCloneWorker<T extends Node>(node: T, renameMap?: Map<Identifier>, checker?: TypeChecker, callback?: (originalNode: Node, clone: Node) => any): T {
         const visited = (renameMap || checker || callback) ?
-        visitEachChild(node, wrapper, nullTransformationContext) :
-        visitEachChild(node, getSynthesizedDeepClone, nullTransformationContext);
+            visitEachChild(node, wrapper, nullTransformationContext) :
+            visitEachChild(node, getSynthesizedDeepClone, nullTransformationContext);
 
         if (visited === node) {
             // This only happens for leaf nodes - internal nodes always see their children change.
@@ -1828,7 +1859,7 @@ namespace ts {
      * to be on the reference, rather than the declaration, because it's closer to where the
      * user was before extracting it.
      */
-    export function getRenameLocation(edits: ReadonlyArray<FileTextChanges>, renameFilename: string, name: string, preferLastLocation: boolean): number {
+    export function getRenameLocation(edits: readonly FileTextChanges[], renameFilename: string, name: string, preferLastLocation: boolean): number {
         let delta = 0;
         let lastPos = -1;
         for (const { fileName, textChanges } of edits) {
@@ -1974,8 +2005,7 @@ namespace ts {
         const notAccessible = () => { typeIsAccessible = false; };
         const res = checker.typeToTypeNode(type, enclosingScope, /*flags*/ undefined, {
             trackSymbol: (symbol, declaration, meaning) => {
-                // TODO: GH#18217
-                typeIsAccessible = typeIsAccessible && checker.isSymbolAccessible(symbol, declaration, meaning!, /*shouldComputeAliasToMarkVisible*/ false).accessibility === SymbolAccessibility.Accessible;
+                typeIsAccessible = typeIsAccessible && checker.isSymbolAccessible(symbol, declaration, meaning, /*shouldComputeAliasToMarkVisible*/ false).accessibility === SymbolAccessibility.Accessible;
             },
             reportInaccessibleThisError: notAccessible,
             reportPrivateInBaseOfClassExpression: notAccessible,
@@ -1990,5 +2020,264 @@ namespace ts {
             }
         });
         return typeIsAccessible ? res : undefined;
+    }
+
+    export function syntaxRequiresTrailingCommaOrSemicolonOrASI(kind: SyntaxKind) {
+        return kind === SyntaxKind.CallSignature
+            || kind === SyntaxKind.ConstructSignature
+            || kind === SyntaxKind.IndexSignature
+            || kind === SyntaxKind.PropertySignature
+            || kind === SyntaxKind.MethodSignature;
+    }
+
+    export function syntaxRequiresTrailingFunctionBlockOrSemicolonOrASI(kind: SyntaxKind) {
+        return kind === SyntaxKind.FunctionDeclaration
+            || kind === SyntaxKind.Constructor
+            || kind === SyntaxKind.MethodDeclaration
+            || kind === SyntaxKind.GetAccessor
+            || kind === SyntaxKind.SetAccessor;
+    }
+
+    export function syntaxRequiresTrailingModuleBlockOrSemicolonOrASI(kind: SyntaxKind) {
+        return kind === SyntaxKind.ModuleDeclaration;
+    }
+
+    export function syntaxRequiresTrailingSemicolonOrASI(kind: SyntaxKind) {
+        return kind === SyntaxKind.VariableStatement
+            || kind === SyntaxKind.ExpressionStatement
+            || kind === SyntaxKind.DoStatement
+            || kind === SyntaxKind.ContinueStatement
+            || kind === SyntaxKind.BreakStatement
+            || kind === SyntaxKind.ReturnStatement
+            || kind === SyntaxKind.ThrowStatement
+            || kind === SyntaxKind.DebuggerStatement
+            || kind === SyntaxKind.PropertyDeclaration
+            || kind === SyntaxKind.TypeAliasDeclaration
+            || kind === SyntaxKind.ImportDeclaration
+            || kind === SyntaxKind.ImportEqualsDeclaration
+            || kind === SyntaxKind.ExportDeclaration
+            || kind === SyntaxKind.NamespaceExportDeclaration
+            || kind === SyntaxKind.ExportAssignment;
+    }
+
+    export const syntaxMayBeASICandidate = or(
+        syntaxRequiresTrailingCommaOrSemicolonOrASI,
+        syntaxRequiresTrailingFunctionBlockOrSemicolonOrASI,
+        syntaxRequiresTrailingModuleBlockOrSemicolonOrASI,
+        syntaxRequiresTrailingSemicolonOrASI);
+
+    export function isASICandidate(node: Node, sourceFile: SourceFileLike): boolean {
+        const lastToken = node.getLastToken(sourceFile);
+        if (lastToken && lastToken.kind === SyntaxKind.SemicolonToken) {
+            return false;
+        }
+
+        if (syntaxRequiresTrailingCommaOrSemicolonOrASI(node.kind)) {
+            if (lastToken && lastToken.kind === SyntaxKind.CommaToken) {
+                return false;
+            }
+        }
+        else if (syntaxRequiresTrailingModuleBlockOrSemicolonOrASI(node.kind)) {
+            const lastChild = last(node.getChildren(sourceFile));
+            if (lastChild && isModuleBlock(lastChild)) {
+                return false;
+            }
+        }
+        else if (syntaxRequiresTrailingFunctionBlockOrSemicolonOrASI(node.kind)) {
+            const lastChild = last(node.getChildren(sourceFile));
+            if (lastChild && isFunctionBlock(lastChild)) {
+                return false;
+            }
+        }
+        else if (!syntaxRequiresTrailingSemicolonOrASI(node.kind)) {
+            return false;
+        }
+
+        // See comment in parser’s `parseDoStatement`
+        if (node.kind === SyntaxKind.DoStatement) {
+            return true;
+        }
+
+        const topNode = findAncestor(node, ancestor => !ancestor.parent)!;
+        const nextToken = findNextToken(node, topNode, sourceFile);
+        if (!nextToken || nextToken.kind === SyntaxKind.CloseBraceToken) {
+            return true;
+        }
+
+        const startLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line;
+        const endLine = sourceFile.getLineAndCharacterOfPosition(nextToken.getStart(sourceFile)).line;
+        return startLine !== endLine;
+    }
+
+    export function probablyUsesSemicolons(sourceFile: SourceFile): boolean {
+        let withSemicolon = 0;
+        let withoutSemicolon = 0;
+        const nStatementsToObserve = 5;
+        forEachChild(sourceFile, function visit(node): boolean | undefined {
+            if (syntaxRequiresTrailingSemicolonOrASI(node.kind)) {
+                const lastToken = node.getLastToken(sourceFile);
+                if (lastToken && lastToken.kind === SyntaxKind.SemicolonToken) {
+                    withSemicolon++;
+                }
+                else {
+                    withoutSemicolon++;
+                }
+            }
+            if (withSemicolon + withoutSemicolon >= nStatementsToObserve) {
+                return true;
+            }
+
+            return forEachChild(node, visit);
+        });
+
+        // One statement missing a semicolon isn’t sufficient evidence to say the user
+        // doesn’t want semicolons, because they may not even be done writing that statement.
+        if (withSemicolon === 0 && withoutSemicolon <= 1) {
+            return true;
+        }
+
+        // If even 2/5 places have a semicolon, the user probably wants semicolons
+        return withSemicolon / withoutSemicolon > 1 / nStatementsToObserve;
+    }
+
+    export function tryGetDirectories(host: Pick<LanguageServiceHost, "getDirectories">, directoryName: string): string[] {
+        return tryIOAndConsumeErrors(host, host.getDirectories, directoryName) || [];
+    }
+
+    export function tryReadDirectory(host: Pick<LanguageServiceHost, "readDirectory">, path: string, extensions?: readonly string[], exclude?: readonly string[], include?: readonly string[]): readonly string[] {
+        return tryIOAndConsumeErrors(host, host.readDirectory, path, extensions, exclude, include) || emptyArray;
+    }
+
+    export function tryFileExists(host: Pick<LanguageServiceHost, "fileExists">, path: string): boolean {
+        return tryIOAndConsumeErrors(host, host.fileExists, path);
+    }
+
+    export function tryDirectoryExists(host: LanguageServiceHost, path: string): boolean {
+        return tryAndIgnoreErrors(() => directoryProbablyExists(path, host)) || false;
+    }
+
+    export function tryAndIgnoreErrors<T>(cb: () => T): T | undefined {
+        try { return cb(); }
+        catch { return undefined; }
+    }
+
+    export function tryIOAndConsumeErrors<T>(host: unknown, toApply: ((...a: any[]) => T) | undefined, ...args: any[]) {
+        return tryAndIgnoreErrors(() => toApply && toApply.apply(host, args));
+    }
+
+    export function findPackageJsons(startDirectory: string, host: Pick<LanguageServiceHost, "fileExists">, stopDirectory?: string): string[] {
+        const paths: string[] = [];
+        forEachAncestorDirectory(startDirectory, ancestor => {
+            if (ancestor === stopDirectory) {
+                return true;
+            }
+            const currentConfigPath = combinePaths(ancestor, "package.json");
+            if (tryFileExists(host, currentConfigPath)) {
+                paths.push(currentConfigPath);
+            }
+        });
+        return paths;
+    }
+
+    export function findPackageJson(directory: string, host: LanguageServiceHost): string | undefined {
+        let packageJson: string | undefined;
+        forEachAncestorDirectory(directory, ancestor => {
+            if (ancestor === "node_modules") return true;
+            packageJson = findConfigFile(ancestor, (f) => tryFileExists(host, f), "package.json");
+            if (packageJson) {
+                return true; // break out
+            }
+        });
+        return packageJson;
+    }
+
+    export function getPackageJsonsVisibleToFile(fileName: string, host: LanguageServiceHost): readonly PackageJsonInfo[] {
+        if (!host.fileExists) {
+            return [];
+        }
+
+        const packageJsons: PackageJsonInfo[] = [];
+        forEachAncestorDirectory(getDirectoryPath(fileName), ancestor => {
+            const packageJsonFileName = combinePaths(ancestor, "package.json");
+            if (host.fileExists!(packageJsonFileName)) {
+                const info = createPackageJsonInfo(packageJsonFileName, host);
+                if (info) {
+                    packageJsons.push(info);
+                }
+            }
+        });
+
+        return packageJsons;
+    }
+
+    export function createPackageJsonInfo(fileName: string, host: LanguageServiceHost): PackageJsonInfo | undefined {
+        if (!host.readFile) {
+            return undefined;
+        }
+
+        type PackageJsonRaw = Record<typeof dependencyKeys[number], Record<string, string> | undefined>;
+        const dependencyKeys = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
+        const stringContent = host.readFile(fileName);
+        const content = stringContent && tryParseJson(stringContent) as PackageJsonRaw;
+        if (!content) {
+            return undefined;
+        }
+
+        const info: Pick<PackageJsonInfo, typeof dependencyKeys[number]> = {};
+        for (const key of dependencyKeys) {
+            const dependencies = content[key];
+            if (!dependencies) {
+                continue;
+            }
+            const dependencyMap = createMap<string>();
+            for (const packageName in dependencies) {
+                dependencyMap.set(packageName, dependencies[packageName]);
+            }
+            info[key] = dependencyMap;
+        }
+
+        const dependencyGroups = [
+            [PackageJsonDependencyGroup.Dependencies, info.dependencies],
+            [PackageJsonDependencyGroup.DevDependencies, info.devDependencies],
+            [PackageJsonDependencyGroup.OptionalDependencies, info.optionalDependencies],
+            [PackageJsonDependencyGroup.PeerDependencies, info.peerDependencies],
+        ] as const;
+
+        return {
+            ...info,
+            fileName,
+            get,
+            has(dependencyName, inGroups) {
+                return !!get(dependencyName, inGroups);
+            },
+        };
+
+        function get(dependencyName: string, inGroups = PackageJsonDependencyGroup.All) {
+            for (const [group, deps] of dependencyGroups) {
+                if (deps && (inGroups & group)) {
+                    const dep = deps.get(dependencyName);
+                    if (dep !== undefined) {
+                        return dep;
+                    }
+                }
+            }
+        }
+    }
+
+    function tryParseJson(text: string) {
+        try {
+            return JSON.parse(text);
+        }
+        catch {
+            return undefined;
+        }
+    }
+
+    export function consumesNodeCoreModules(sourceFile: SourceFile): boolean {
+        return some(sourceFile.imports, ({ text }) => JsTyping.nodeCoreModules.has(text));
+    }
+
+    export function isInsideNodeModules(fileOrDirectory: string): boolean {
+        return contains(getPathComponents(fileOrDirectory), "node_modules");
     }
 }

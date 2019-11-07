@@ -15032,18 +15032,6 @@ namespace ts {
                 return result;
             }
 
-            function propagateSidebandVarianceFlags(typeArguments: readonly Type[], variances: VarianceFlags[]) {
-                for (let i = 0; i < variances.length; i++) {
-                    const v = variances[i];
-                    if (v & VarianceFlags.Unmeasurable) {
-                        instantiateType(typeArguments[i], reportUnmeasurableMarkers);
-                    }
-                    if (v & VarianceFlags.Unreliable) {
-                        instantiateType(typeArguments[i], reportUnreliableMarkers);
-                    }
-                }
-            }
-
             // Determine if possibly recursive types are related. First, check if the result is already available in the global cache.
             // Second, check if we have already started a comparison of the given two types in which case we assume the result to be true.
             // Third, check if both types are part of deeply nested chains of generic type instantiations and if so assume the types are

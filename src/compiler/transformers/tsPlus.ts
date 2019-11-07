@@ -55,13 +55,13 @@ namespace ts {
 
     export interface EmitHost {
         /* @internal */
-        getTypeChecker(): TypeChecker;
+        getTypeChecker?(): TypeChecker;
     }
 
     export function transformTypeScriptPlus(context: TransformationContext) {
         const compilerOptions = context.getCompilerOptions();
         const compilerDefines = getCompilerDefines(compilerOptions.defines);
-        const typeChecker = context.getEmitHost().getTypeChecker();
+        const typeChecker = context.getEmitHost().getTypeChecker!();
         const previousOnSubstituteNode = context.onSubstituteNode;
         if (compilerDefines) {
             context.onSubstituteNode = onSubstituteNode;

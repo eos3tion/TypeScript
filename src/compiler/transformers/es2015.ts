@@ -257,7 +257,7 @@ namespace ts {
         context.onEmitNode = onEmitNode;
         context.onSubstituteNode = onSubstituteNode;
 
-        const typeChecker = compilerOptions.accessorOptimization ? context.getEmitHost().getTypeChecker() : null;
+        const typeChecker = compilerOptions.accessorOptimization ? context.getEmitHost().getTypeChecker!() : null;
 
         let currentSourceFile: SourceFile;
         let currentText: string;

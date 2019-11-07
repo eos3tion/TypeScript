@@ -198,7 +198,7 @@ namespace ts {
             if (defines) {
                 let keys = Object.keys(defines);
                 for (let key of keys) {
-                    let value = defines[key];
+                    let value: any = defines[key];
                     let type = typeof value;
                     switch (type) {
                         case "boolean":
@@ -284,7 +284,7 @@ namespace ts {
             argumentsArray.push(createArrayLiteral(elements));
         }
         return createCall(
-            getHelperName("__reflect"),
+            getUnscopedHelperName("__reflect"),
             /*typeArguments*/ undefined,
             argumentsArray
         );

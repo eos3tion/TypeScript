@@ -9,7 +9,7 @@ module.exports.C = C
 >module.exports.C = C : typeof C
 >module.exports.C : typeof C
 >module.exports : typeof import("tests/cases/conformance/jsdoc/mod1")
->module : { "tests/cases/conformance/jsdoc/mod1": typeof import("tests/cases/conformance/jsdoc/mod1"); }
+>module : { "\"tests/cases/conformance/jsdoc/mod1\"": typeof import("tests/cases/conformance/jsdoc/mod1"); }
 >exports : typeof import("tests/cases/conformance/jsdoc/mod1")
 >C : typeof C
 >C : typeof C
@@ -18,7 +18,7 @@ module.exports.C = C
 /** @typedef {import('./mod1').C} X */
 /** @param {X} c */
 function demo(c) {
->demo : (c: C) => void
+>demo : (c: X) => void
 >c : C
 
     c.s

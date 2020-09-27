@@ -26,17 +26,17 @@ export default Foo;
 /// <reference path="../../../..react16.d.ts" />
 export default Foo;
 declare function Foo({ bar }: {
-    bar: any;
+  bar: any;
 }): JSX.Element;
 declare namespace Foo {
-    export { propTypes };
-    export { defaultProps };
+  export { propTypes };
+  export { defaultProps };
 }
 declare namespace propTypes {
-    export const bar: PropTypes.Requireable<boolean>;
+  const bar: PropTypes.Requireable<boolean>;
 }
 declare namespace defaultProps {
-    const bar_1: boolean;
-    export { bar_1 as bar };
+  const bar_1: boolean;
+  export { bar_1 as bar };
 }
 import PropTypes from "prop-types";

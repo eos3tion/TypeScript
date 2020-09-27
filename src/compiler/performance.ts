@@ -1,11 +1,4 @@
 /*@internal*/
-namespace ts {
-    declare const performance: { now?(): number } | undefined;
-    /** Gets a timestamp with (at least) ms resolution */
-    export const timestamp = typeof performance !== "undefined" && performance.now ? () => performance.now!() : Date.now ? Date.now : () => +(new Date());
-}
-
-/*@internal*/
 /** Performance measurements for the compiler. */
 namespace ts.performance {
     declare const onProfilerEvent: { (markName: string): void; profiler: boolean; };
@@ -15,9 +8,9 @@ namespace ts.performance {
 
     let enabled = false;
     let profilerStart = 0;
-    let counts: Map<number>;
-    let marks: Map<number>;
-    let measures: Map<number>;
+    let counts: ESMap<string, number>;
+    let marks: ESMap<string, number>;
+    let measures: ESMap<string, number>;
 
     export interface Timer {
         enter(): void;
@@ -115,9 +108,9 @@ namespace ts.performance {
 
     /** Enables (and resets) performance measurements for the compiler. */
     export function enable() {
-        counts = createMap<number>();
-        marks = createMap<number>();
-        measures = createMap<number>();
+        counts = new Map<string, number>();
+        marks = new Map<string, number>();
+        measures = new Map<string, number>();
         enabled = true;
         profilerStart = timestamp();
     }

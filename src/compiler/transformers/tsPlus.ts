@@ -68,19 +68,19 @@ namespace ts {
             context.enableSubstitution(SyntaxKind.Identifier);
         }
 
-        return chainBundle(transformSourceFile);
+        return chainBundle(context, transformSourceFile);
 
         function transformSourceFile(node: SourceFile) {
             if (!compilerOptions.emitReflection) {
                 return node;
             }
-            let visited = updateSourceFileNode(node, visitNodes(node.statements, visitStatement, isStatement));
+            const visited = factory.updateSourceFile(node, visitNodes(node.statements, visitStatement, isStatement));
             addEmitHelpers(visited, context.readEmitHelpers());
             return visited;
         }
 
         function visitStatement(node: Node): VisitResult<Node> {
-            if (hasModifier(node, ModifierFlags.Ambient)) {
+            if (hasSyntacticModifier(node, ModifierFlags.Ambient)) {
                 return node;
             }
             if (node.kind === SyntaxKind.ClassDeclaration) {
@@ -93,47 +93,35 @@ namespace ts {
         }
 
         function visitModule(node: NamespaceDeclaration): NamespaceDeclaration {
-            if (node.body.kind === SyntaxKind.ModuleDeclaration) {
-                return updateModuleDeclaration(node, visitModule(<NamespaceDeclaration>node.body));
+            const body = node.body;
+            if (isModuleDeclaration(body)) {
+                return updateModuleDeclaration(node, visitModule(body));
             }
-            if (node.body.kind === SyntaxKind.ModuleBlock) {
-                const body = updateModuleBlock(node.body, visitNodes(
-                    (<ModuleBlock>node.body).statements, visitStatement, isStatement));
-                return updateModuleDeclaration(node, body);
+            if (isModuleBlock(body)) {
+                return updateModuleDeclaration(node, factory.updateModuleBlock(body, body.statements));
             }
             return node;
         }
 
         function updateModuleDeclaration(node: NamespaceDeclaration, body: ModuleBody) {
             if (node.body !== body) {
-                let updated = getMutableClone(node);
-                updated.body = <ModuleBlock>body;
-                return updateNode(updated, node);
-            }
-            return node
-        }
-
-        function updateModuleBlock(node: ModuleBlock, statements: NodeArray<Statement>) {
-            if (node.statements !== statements) {
-                let updated = getMutableClone(node);
-                updated.statements = createNodeArray(statements);
-                return updateNode(updated, node);
+                return factory.updateModuleDeclaration(node, node.decorators, node.modifiers, node.name, body) as NamespaceDeclaration;
             }
             return node;
         }
 
         function visitClassDeclaration(node: ClassDeclaration): VisitResult<Statement> {
-            const classStatement = getMutableClone(node);
+            const classStatement = factory.cloneNode(node);
             const statements: Statement[] = [classStatement];
 
-            let interfaceMap: any = {};
+            const interfaceMap: any = {};
             getImplementedInterfaces(node, interfaceMap);
-            let allInterfaces: string[] = Object.keys(interfaceMap);
+            const allInterfaces = Object.keys(interfaceMap);
             let interfaces: string[];
-            let superTypes = getSuperClassTypes(node);
+            const superTypes = getSuperClassTypes(node);
             if (superTypes) {
                 interfaces = [];
-                for (let type of allInterfaces) {
+                for (const type of allInterfaces) {
                     if (superTypes.indexOf(type) === -1) {
                         interfaces.push(type);
                     }
@@ -143,12 +131,12 @@ namespace ts {
                 interfaces = allInterfaces;
             }
             node.typeNames = interfaces;
-            let fullClassName = typeChecker!.getFullyQualifiedName(node.symbol);
-            let name = node.name!;
+            const fullClassName = typeChecker.getFullyQualifiedName(node.symbol);
+            const name = node.name!;
             const expression = createReflectHelper(context, name, fullClassName, interfaces);
             setSourceMapRange(expression, createRange(name.pos, node.end));
 
-            const statement = createStatement(expression);
+            const statement = factory.createExpressionStatement(expression);
             setSourceMapRange(statement, createRange(-1, node.end));
             statements.push(statement);
 
@@ -156,21 +144,21 @@ namespace ts {
         }
 
         function getImplementedInterfaces(node: Node, result: any) {
-            let superInterfaces: NodeArray<ExpressionWithTypeArguments> | undefined;
+            let superInterfaces: readonly ExpressionWithTypeArguments[] | undefined;
             if (node.kind === SyntaxKind.ClassDeclaration) {
-                superInterfaces = getClassImplementsHeritageClauseElements(<ClassLikeDeclaration>node);
+                superInterfaces = getEffectiveImplementsTypeNodes(<ClassLikeDeclaration>node);
             }
             else {
                 superInterfaces = getInterfaceBaseTypeNodes(<InterfaceDeclaration>node);
             }
             if (superInterfaces) {
                 superInterfaces.forEach(superInterface => {
-                    let type = typeChecker.getTypeAtLocation(superInterface)
+                    const type = typeChecker.getTypeAtLocation(superInterface);
                     if (type && type.symbol && type.symbol.flags & SymbolFlags.Interface) {
-                        let symbol = type.symbol;
-                        let fullName = typeChecker.getFullyQualifiedName(symbol);
+                        const symbol = type.symbol;
+                        const fullName = typeChecker.getFullyQualifiedName(symbol);
                         result[fullName] = true;
-                        const declaration = ts.getDeclarationOfKind(symbol, SyntaxKind.InterfaceDeclaration);
+                        const declaration = getDeclarationOfKind(symbol, SyntaxKind.InterfaceDeclaration);
                         if (declaration) {
                             getImplementedInterfaces(declaration, result);
                         }
@@ -180,26 +168,26 @@ namespace ts {
         }
 
         function getSuperClassTypes(node: ClassLikeDeclaration) {
-            let superClass = tryGetClassExtendingExpressionWithTypeArguments(node)!;
+            const superClass = tryGetClassExtendingExpressionWithTypeArguments(node)!;
             if (!superClass) {
                 return;
             }
-            let type = typeChecker && typeChecker.getTypeAtLocation(superClass);
+            const type = typeChecker && typeChecker.getTypeAtLocation(superClass);
             if (!type || !type.symbol) {
                 return;
             }
-            let declaration = <ClassLikeDeclaration>ts.getDeclarationOfKind(type.symbol, SyntaxKind.ClassDeclaration);
+            const declaration = <ClassLikeDeclaration>getDeclarationOfKind(type.symbol, SyntaxKind.ClassDeclaration);
             return declaration && declaration.typeNames;
         }
 
 
         function getCompilerDefines(defines?: MapLike<any>) {
-            let compilerDefines: MapLike<any> = {};
+            const compilerDefines: MapLike<any> = {};
             if (defines) {
-                let keys = Object.keys(defines);
-                for (let key of keys) {
-                    let value: any = defines[key];
-                    let type = typeof value;
+                const keys = Object.keys(defines);
+                for (const key of keys) {
+                    const value = defines[key];
+                    const type = typeof value;
                     switch (type) {
                         case "boolean":
                         case "number":
@@ -219,30 +207,30 @@ namespace ts {
                 return false;
             }
             if (!node.parent) {
-                return false
+                return false;
             }
             if (node.parent.kind === SyntaxKind.VariableDeclaration && (<VariableDeclaration>node.parent).name === node) {
                 return false;
             }
             if (node.parent.kind === SyntaxKind.BinaryExpression) {
-                let parent = <BinaryExpression>node.parent;
+                const parent = <BinaryExpression>node.parent;
                 if (parent.left === node && parent.operatorToken.kind === SyntaxKind.EqualsToken) {
                     return false;
                 }
             }
 
-            let symbol = typeChecker.getSymbolAtLocation(node);
+            const symbol = typeChecker.getSymbolAtLocation(node);
             if (!symbol || !symbol.declarations) {
                 return false;
             }
-            let declaration = symbol.declarations[0];
+            const declaration = symbol.declarations[0];
             if (!declaration) {
                 return false;
             }
             if (declaration.kind !== SyntaxKind.VariableDeclaration) {
                 return false;
             }
-            let statement = declaration.parent.parent;
+            const statement = declaration.parent.parent;
             return (statement.parent.kind === SyntaxKind.SourceFile);
         }
 
@@ -254,7 +242,7 @@ namespace ts {
         function onSubstituteNode(hint: EmitHint, node: Node) {
             node = previousOnSubstituteNode(hint, node);
             if (isIdentifier(node) && isDefinedConstant(node)) {
-                return createIdentifier(compilerDefines[node.escapedText as string]);
+                return factory.createIdentifier(compilerDefines[node.escapedText as string]);
             }
             return node;
         }
@@ -272,19 +260,19 @@ namespace ts {
 
     function createReflectHelper(context: TransformationContext, name: Identifier, fullClassName: string, interfaces: string[]) {
         context.requestEmitHelper(reflectHelper);
-        let argumentsArray: Expression[] = [
-            createPropertyAccess(name, createIdentifier("prototype")),
-            createLiteral(fullClassName)
+        const argumentsArray: Expression[] = [
+            factory.createPropertyAccessExpression(name, factory.createIdentifier("prototype")),
+            factory.createStringLiteral(fullClassName)
         ];
         if (interfaces.length) {
-            let elements: Expression[] = [];
-            for (let value of interfaces) {
-                elements.push(createLiteral(value));
+            const elements: Expression[] = [];
+            for (const value of interfaces) {
+                elements.push(factory.createStringLiteral(value));
             }
-            argumentsArray.push(createArrayLiteral(elements));
+            argumentsArray.push(factory.createArrayLiteralExpression(elements));
         }
-        return createCall(
-            getUnscopedHelperName("__reflect"),
+        return factory.createCallExpression(
+            context.getEmitHelperFactory().getUnscopedHelperName("__reflect"),
             /*typeArguments*/ undefined,
             argumentsArray
         );

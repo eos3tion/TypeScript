@@ -33,12 +33,12 @@ namespace ts {
     }
 
     function createMap<T>(): Map<T> {
-        const map: Map<T> = Object.create(null);
+        const map: Map<T> = {};
         // Using 'delete' on an object causes V8 to put the object in dictionary mode.
         // This disables creation of hidden classes, which are expensive when an object is
         // constantly changing shape.
-        map["__"] = <T><any>undefined;
-        delete map["__"];
+        map.__ = undefined as any;
+        delete map.__;
         return map;
     }
 
@@ -52,7 +52,7 @@ namespace ts {
         return sortOnDependency();
 
         function addDependency(file: string, dependent: string) {
-            if (file == dependent) {
+            if (file === dependent) {
                 return;
             }
             if (!dependencyMap) {
@@ -62,14 +62,13 @@ namespace ts {
             if (!list) {
                 list = dependencyMap[file] = [];
             }
-            if (list.indexOf(dependent) == -1) {
+            if (list.indexOf(dependent) === -1) {
                 list.push(dependent);
             }
         }
 
-        function buildDependencyMap(sourceFiles: ReadonlyArray<SourceFile>) {
-            for (let i = 0; i < sourceFiles.length; i++) {
-                let sourceFile = sourceFiles[i];
+        function buildDependencyMap(sourceFiles: readonly SourceFile[]) {
+            for (const sourceFile of sourceFiles) {
                 if (sourceFile.isDeclarationFile) {
                     continue;
                 }
@@ -78,14 +77,14 @@ namespace ts {
         }
 
         function visitFile(sourceFile: SourceFile) {
-            let statements = sourceFile.statements;
-            let length = statements.length;
+            const statements = sourceFile.statements;
+            const length = statements.length;
             for (let i = 0; i < length; i++) {
-                let statement = statements[i];
-                if (hasModifier(statement, ModifierFlags.Ambient)) { // has the 'declare' keyword
+                const statement = statements[i];
+                if (hasSyntacticModifier(statement, ModifierFlags.Ambient)) { // has the 'declare' keyword
                     continue;
                 }
-                visitStatement(statements[i]);
+                visitStatement(statement);
             }
         }
 
@@ -95,7 +94,7 @@ namespace ts {
             }
             switch (statement.kind) {
                 case SyntaxKind.ExpressionStatement:
-                    let expression = <ExpressionStatement>statement;
+                    const expression = <ExpressionStatement>statement;
                     visitExpression(expression.expression);
                     break;
                 case SyntaxKind.ClassDeclaration:
@@ -109,7 +108,7 @@ namespace ts {
                     visitVariableList((<VariableStatement>statement).declarationList);
                     break;
                 case SyntaxKind.ImportEqualsDeclaration:
-                    let importDeclaration = <ImportEqualsDeclaration>statement;
+                    const importDeclaration = <ImportEqualsDeclaration>statement;
                     checkDependencyAtLocation(importDeclaration.moduleReference);
                     break;
                 case SyntaxKind.ModuleDeclaration:
@@ -132,31 +131,21 @@ namespace ts {
                     visitStatement(doStatement.statement);
                     break;
                 case SyntaxKind.ForStatement:
-                    const forStatement = <ForStatement>statement;
-                    visitExpression(forStatement.condition);
-                    visitExpression(forStatement.incrementor);
-                    if (forStatement.initializer) {
-                        if (forStatement.initializer.kind === SyntaxKind.VariableDeclarationList) {
-                            visitVariableList(<VariableDeclarationList>forStatement.initializer);
-                        }
-                        else {
-                            visitExpression(<Expression>forStatement.initializer);
-                        }
+                    {
+                        const forStatement = <ForStatement>statement;
+                        visitExpression(forStatement.condition);
+                        visitExpression(forStatement.incrementor);
+                        checkInitializer(forStatement.initializer);
+                        break;
                     }
-                    break;
                 case SyntaxKind.ForInStatement:
                 case SyntaxKind.ForOfStatement:
-                    const forInStatement = <ForInStatement>statement;
-                    visitExpression(forInStatement.expression);
-                    if (forInStatement.initializer) {
-                        if (forInStatement.initializer.kind === SyntaxKind.VariableDeclarationList) {
-                            visitVariableList(<VariableDeclarationList>forInStatement.initializer);
-                        }
-                        else {
-                            visitExpression(<Expression>forInStatement.initializer);
-                        }
+                    {
+                        const forInStatement = <ForInStatement>statement;
+                        visitExpression(forInStatement.expression);
+                        checkInitializer(forInStatement.initializer);
+                        break;
                     }
-                    break;
                 case SyntaxKind.ReturnStatement:
                     visitExpression((<ReturnStatement>statement).expression);
                     break;
@@ -164,12 +153,12 @@ namespace ts {
                     const switchStatment = <SwitchStatement>statement;
                     visitExpression(switchStatment.expression);
                     switchStatment.caseBlock.clauses.forEach(element => {
-                        if (element.kind === SyntaxKind.CaseClause) {
-                            visitExpression((<CaseClause>element).expression);
+                        if (isCaseClause(element)) {
+                            visitExpression(element.expression);
                         }
-                        (<DefaultClause>element).statements.forEach(element => {
+                        element.statements.forEach(element => {
                             visitStatement(element);
-                        })
+                        });
                     });
                     break;
                 case SyntaxKind.LabeledStatement:
@@ -189,18 +178,29 @@ namespace ts {
             }
         }
 
+        function checkInitializer(initializer?: ForInitializer) {
+            if (initializer) {
+                if (isVariableDeclarationList(initializer)) {
+                    visitVariableList(initializer);
+                }
+                else {
+                    visitExpression(initializer);
+                }
+            }
+        }
+
         function visitModule(node: ModuleDeclaration) {
-            let body = node.body;
+            const body = node.body;
             if (!body) {
                 return;
             }
-            if (body.kind === SyntaxKind.ModuleDeclaration) {
-                visitModule(<ModuleDeclaration>node.body);
+            if (isModuleDeclaration(body)) {
+                visitModule(body);
                 return;
             }
-            if (body.kind === SyntaxKind.ModuleBlock) {
-                for (let statement of (<ModuleBlock>node.body).statements) {
-                    if (hasModifier(statement, ModifierFlags.Ambient)) { // has the 'declare' keyword
+            if (isModuleBlock(body)) {
+                for (const statement of body.statements) {
+                    if (hasSyntacticModifier(statement, ModifierFlags.Ambient)) { // has the 'declare' keyword
                         continue;
                     }
                     visitStatement(statement);
@@ -210,11 +210,11 @@ namespace ts {
         }
 
         function checkDependencyAtLocation(node: Node) {
-            let symbol = checker && checker.getSymbolAtLocation(node);
+            const symbol = checker && checker.getSymbolAtLocation(node);
             if (!symbol || !symbol.declarations) {
                 return;
             }
-            let sourceFile = getSourceFileOfNode(symbol.declarations[0]);
+            const sourceFile = getSourceFileOfNode(symbol.declarations[0]);
             if (!sourceFile || sourceFile.isDeclarationFile) {
                 return;
             }
@@ -225,7 +225,7 @@ namespace ts {
             if (!node.heritageClauses) {
                 return;
             }
-            let heritageClause: HeritageClause | null = null;
+            let heritageClause: HeritageClause | undefined;
             for (const clause of node.heritageClauses) {
                 if (clause.token === SyntaxKind.ExtendsKeyword) {
                     heritageClause = clause;
@@ -235,7 +235,7 @@ namespace ts {
             if (!heritageClause) {
                 return;
             }
-            let superClasses = heritageClause.types;
+            const superClasses = heritageClause.types;
             if (!superClasses) {
                 return;
             }
@@ -245,17 +245,16 @@ namespace ts {
         }
 
         function visitStaticMember(node: ClassDeclaration) {
-            let members = node.members;
+            const members = node.members;
             if (!members) {
                 return;
             }
-            for (let member of members) {
-                if (!hasModifier(member, ModifierFlags.Static)) {
+            for (const member of members) {
+                if (!hasSyntacticModifier(member, ModifierFlags.Static)) {
                     continue;
                 }
-                if (member.kind == SyntaxKind.PropertyDeclaration) {
-                    let property = <PropertyDeclaration>member;
-                    visitExpression(property.initializer);
+                if (isPropertyDeclaration(member)) {
+                    visitExpression(member.initializer);
                 }
             }
         }
@@ -264,28 +263,32 @@ namespace ts {
             if (node.decorators) {
                 visitDecorators(node.decorators);
             }
-            let members = node.members;
+            const members = node.members;
             if (!members) {
                 return;
             }
-            for (let member of members) {
+            for (const member of members) {
                 let decorators: NodeArray<Decorator> | undefined;
                 let functionLikeMember: FunctionLikeDeclaration | undefined;
-                if (member.kind === SyntaxKind.GetAccessor || member.kind === SyntaxKind.SetAccessor) {
-                    const accessors = getAllAccessorDeclarations(node.members, <AccessorDeclaration>member);
-                    if (member !== accessors.firstAccessor) {
+                if (isAccessor(member)) {
+                    const accessors = getAllAccessorDeclarations(node.members, member);
+                    const firstAccessor = accessors.firstAccessor;
+                    if (member !== firstAccessor) {
                         continue;
                     }
-                    decorators = accessors.firstAccessor.decorators;
-                    if (!decorators && accessors.secondAccessor) {
-                        decorators = accessors.secondAccessor.decorators;
+                    decorators = firstAccessor.decorators;
+                    if (!decorators) {
+                        const secondAccessor = accessors.secondAccessor;
+                        if (secondAccessor) {
+                            decorators = secondAccessor.decorators;
+                        }
                     }
                     functionLikeMember = accessors.setAccessor;
                 }
                 else {
                     decorators = member.decorators;
-                    if (member.kind === SyntaxKind.MethodDeclaration) {
-                        functionLikeMember = <MethodDeclaration>member;
+                    if (isMethodDeclaration(member)) {
+                        functionLikeMember = member;
                     }
                 }
                 if (decorators) {
@@ -303,7 +306,7 @@ namespace ts {
         }
 
         function visitDecorators(decorators: NodeArray<Decorator>) {
-            for (let decorator of decorators) {
+            for (const decorator of decorators) {
                 visitCallExpression(decorator.expression);
             }
         }
@@ -331,17 +334,17 @@ namespace ts {
                     visitObjectLiteralExpression(<ObjectLiteralExpression>expression);
                     break;
                 case SyntaxKind.ArrayLiteralExpression:
-                    let arrayLiteral = <ArrayLiteralExpression>expression;
+                    const arrayLiteral = <ArrayLiteralExpression>expression;
                     arrayLiteral.elements.forEach(visitExpression);
                     break;
                 case SyntaxKind.TemplateExpression:
-                    let template = <TemplateExpression>expression;
+                    const template = <TemplateExpression>expression;
                     template.templateSpans.forEach(span => {
                         visitExpression(span.expression);
                     });
                     break;
                 case SyntaxKind.ParenthesizedExpression:
-                    let parenthesized = <ParenthesizedExpression>expression;
+                    const parenthesized = <ParenthesizedExpression>expression;
                     visitExpression(parenthesized.expression);
                     break;
                 case SyntaxKind.BinaryExpression:
@@ -354,35 +357,35 @@ namespace ts {
                 case SyntaxKind.DeleteExpression:
                     visitExpression((<DeleteExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.TaggedTemplateExpression:
+                case SyntaxKind.TaggedTemplateExpression:
                     visitExpression((<TaggedTemplateExpression>expression).tag);
                     visitExpression((<TaggedTemplateExpression>expression).template);
                     break;
-                case ts.SyntaxKind.ConditionalExpression:
-                    visitExpression((<ts.ConditionalExpression>expression).condition);
-                    visitExpression((<ts.ConditionalExpression>expression).whenTrue);
-                    visitExpression((<ts.ConditionalExpression>expression).whenFalse);
+                case SyntaxKind.ConditionalExpression:
+                    visitExpression((<ConditionalExpression>expression).condition);
+                    visitExpression((<ConditionalExpression>expression).whenTrue);
+                    visitExpression((<ConditionalExpression>expression).whenFalse);
                     break;
 
-                case ts.SyntaxKind.SpreadElement:
+                case SyntaxKind.SpreadElement:
                     visitExpression((<SpreadElement>expression).expression);
                     break;
-                case ts.SyntaxKind.VoidExpression:
+                case SyntaxKind.VoidExpression:
                     visitExpression((<VoidExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.YieldExpression:
+                case SyntaxKind.YieldExpression:
                     visitExpression((<YieldExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.AwaitExpression:
+                case SyntaxKind.AwaitExpression:
                     visitExpression((<AwaitExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.TypeOfExpression:
+                case SyntaxKind.TypeOfExpression:
                     visitExpression((<TypeOfExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.NonNullExpression:
+                case SyntaxKind.NonNullExpression:
                     visitExpression((<NonNullExpression>expression).expression);
                     break;
-                case ts.SyntaxKind.TypeAssertionExpression:
+                case SyntaxKind.TypeAssertionExpression:
                     visitExpression((<TypeAssertion>expression).expression);
                     break;
             }
@@ -399,29 +402,29 @@ namespace ts {
             if (!checker) {
                 return;
             }
-            let left = binary.left;
-            let right = binary.right;
+            const { left, right } = binary;
             visitExpression(left);
             visitExpression(right);
             if (binary.operatorToken.kind === SyntaxKind.EqualsToken &&
                 (left.kind === SyntaxKind.Identifier || left.kind === SyntaxKind.PropertyAccessExpression) &&
                 (right.kind === SyntaxKind.Identifier || right.kind === SyntaxKind.PropertyAccessExpression)) {
-                let symbol = checker.getSymbolAtLocation(left);
+                const symbol = checker.getSymbolAtLocation(left);
                 if (!symbol || !symbol.declarations) {
                     return;
                 }
-                for (let declaration of symbol.declarations) {
+                for (const declaration of symbol.declarations) {
                     if (declaration.kind === SyntaxKind.VariableDeclaration || declaration.kind === SyntaxKind.PropertyDeclaration) {
-                        let variable = <VariableDeclaration>declaration;
+                        const variable = <VariableDeclaration>declaration;
                         if (variable.initializer) {
                             continue;
                         }
-                        if (!variable.delayInitializerList) {
-                            variable.delayInitializerList = [];
+                        let delayInitializerList = variable.delayInitializerList;
+                        if (!delayInitializerList) {
+                            variable.delayInitializerList = delayInitializerList = [];
                         }
-                        variable.delayInitializerList.push(right);
+                        delayInitializerList.push(right);
                         if (variable.callerList) {
-                            for (let callerFileName of variable.callerList) {
+                            for (const callerFileName of variable.callerList) {
                                 checkCallTarget(callerFileName, right);
                             }
                         }
@@ -434,13 +437,13 @@ namespace ts {
             objectLiteral.properties.forEach(element => {
                 switch (element.kind) {
                     case SyntaxKind.PropertyAssignment:
-                        visitExpression((<PropertyAssignment>element).initializer);
+                        visitExpression(element.initializer);
                         break;
                     case SyntaxKind.ShorthandPropertyAssignment:
-                        visitExpression((<ShorthandPropertyAssignment>element).objectAssignmentInitializer);
+                        visitExpression(element.objectAssignmentInitializer);
                         break;
                     case SyntaxKind.SpreadAssignment:
-                        visitExpression((<SpreadAssignment>element).expression);
+                        visitExpression(element.expression);
                         break;
                 }
             });
@@ -459,12 +462,12 @@ namespace ts {
             visitExpression(expression);
             switch (expression.kind) {
                 case SyntaxKind.FunctionExpression:
-                    let functionExpression = <FunctionExpression>expression;
+                    const functionExpression = <FunctionExpression>expression;
                     visitBlock(functionExpression.body);
                     break;
                 case SyntaxKind.PropertyAccessExpression:
                 case SyntaxKind.Identifier:
-                    let callerFileName = getSourceFileOfNode(expression).fileName;
+                    const callerFileName = getSourceFileOfNode(expression).fileName;
                     checkCallTarget(callerFileName, expression);
                     break;
                 case SyntaxKind.CallExpression:
@@ -476,44 +479,43 @@ namespace ts {
         function visitReturnedFunction(expression: Expression) {
             expression = escapeParenthesized(expression);
             let returnExpressions: Expression[] = [];
-            if (expression.kind === SyntaxKind.CallExpression) {
-                let expressions = visitReturnedFunction((<CallExpression>expression).expression);
-                for (let returnExpression of expressions) {
-                    let returns = visitReturnedFunction(returnExpression);
+            if (isCallExpression(expression)) {
+                const expressions = visitReturnedFunction(expression.expression);
+                for (const returnExpression of expressions) {
+                    const returns = visitReturnedFunction(returnExpression);
                     returnExpressions = returnExpressions.concat(returns);
                 }
                 return returnExpressions;
             }
 
-            let functionBlocks: Block[] = [];
+            const functionBlocks: Block[] = [];
             switch (expression.kind) {
                 case SyntaxKind.FunctionExpression:
                     functionBlocks.push((<FunctionExpression>expression).body);
                     break;
                 case SyntaxKind.PropertyAccessExpression:
                 case SyntaxKind.Identifier:
-                    let callerFileName = getSourceFileOfNode(expression).fileName;
-                    let declarations: Declaration[] = [];
+                    const callerFileName = getSourceFileOfNode(expression).fileName;
+                    const declarations: Declaration[] = [];
                     getForwardDeclarations(expression, declarations, callerFileName);
-                    for (let declaration of declarations) {
-                        let sourceFile = getSourceFileOfNode(declaration);
+                    for (const declaration of declarations) {
+                        const sourceFile = getSourceFileOfNode(declaration);
                         if (!sourceFile || sourceFile.isDeclarationFile) {
                             continue;
                         }
-                        if (declaration.kind === SyntaxKind.FunctionDeclaration ||
-                            declaration.kind === SyntaxKind.MethodDeclaration) {
-                            functionBlocks.push((<FunctionDeclaration>declaration).body!);
+                        if (isFunctionDeclaration(declaration) || isMethodDeclaration(declaration)) {
+                            functionBlocks.push(declaration.body!);
                         }
                     }
                     break;
             }
 
-            for (let block of functionBlocks) {
-                for (let statement of block.statements) {
-                    if (statement.kind === SyntaxKind.ReturnStatement) {
-                        let returnExpression = (<ReturnStatement>statement).expression;
-                        returnExpressions.push(returnExpression!);
-                        visitCallExpression(returnExpression!);
+            for (const block of functionBlocks) {
+                for (const statement of block.statements) {
+                    if (isReturnStatement(statement)) {
+                        const returnExpression = statement.expression!;
+                        returnExpressions.push(returnExpression);
+                        visitCallExpression(returnExpression);
                     }
                 }
             }
@@ -528,35 +530,34 @@ namespace ts {
         }
 
         function checkCallTarget(callerFileName: string, target: Node) {
-            let declarations: Declaration[] = [];
+            const declarations: Declaration[] = [];
             getForwardDeclarations(target, declarations, callerFileName);
-            for (let declaration of declarations) {
-                let sourceFile = getSourceFileOfNode(declaration);
+            for (const declaration of declarations) {
+                const sourceFile = getSourceFileOfNode(declaration);
                 if (!sourceFile || sourceFile.isDeclarationFile) {
                     continue;
                 }
                 addDependency(callerFileName, sourceFile.fileName);
-                if (declaration.kind === SyntaxKind.FunctionDeclaration ||
-                    declaration.kind === SyntaxKind.MethodDeclaration) {
-                    visitBlock((<FunctionDeclaration>declaration).body);
+                if (isFunctionDeclaration(declaration) || isMethodDeclaration(declaration)) {
+                    visitBlock(declaration.body);
                 }
-                else if (declaration.kind === SyntaxKind.ClassDeclaration) {
-                    checkClassInstantiation(<ClassDeclaration>declaration);
+                else if (isClassDeclaration(declaration)) {
+                    checkClassInstantiation(declaration);
                 }
             }
         }
 
         function getForwardDeclarations(reference: Node, declarations: Declaration[], callerFileName: string) {
-            let symbol = checker && checker.getSymbolAtLocation(reference);
+            const symbol = checker && checker.getSymbolAtLocation(reference);
             if (!symbol || !symbol.declarations) {
                 return;
             }
-            for (let declaration of symbol.declarations) {
+            for (const declaration of symbol.declarations) {
                 switch (declaration.kind) {
                     case SyntaxKind.FunctionDeclaration:
                     case SyntaxKind.MethodDeclaration:
                     case SyntaxKind.ClassDeclaration:
-                        if (declarations.indexOf(declaration) == -1) {
+                        if (declarations.indexOf(declaration) === -1) {
                             declarations.push(declaration);
                         }
                         break;
@@ -574,12 +575,12 @@ namespace ts {
                         }
                         else {
                             if (variable.delayInitializerList) {
-                                for (let expression of variable.delayInitializerList) {
+                                for (const expression of variable.delayInitializerList) {
                                     getForwardDeclarations(expression, declarations, callerFileName);
                                 }
                             }
                             if (variable.callerList) {
-                                if (variable.callerList.indexOf(callerFileName) == -1) {
+                                if (variable.callerList.indexOf(callerFileName) === -1) {
                                     variable.callerList.push(callerFileName);
                                 }
                             }
@@ -593,31 +594,29 @@ namespace ts {
         }
 
         function checkClassInstantiation(node: ClassDeclaration) {
-            let members = node.members;
+            const members = node.members;
             if (!members) {
                 return;
             }
-            for (let member of members) {
-                if (hasModifier(member, ModifierFlags.Static)) {
+            for (const member of members) {
+                if (hasSyntacticModifier(member, ModifierFlags.Static)) {
                     continue;
                 }
-                if (member.kind === SyntaxKind.PropertyDeclaration) {
-                    let property = <PropertyDeclaration>member;
-                    visitExpression(property.initializer);
+                if (isPropertyDeclaration(member)) {
+                    visitExpression(member.initializer);
                 }
-                else if (member.kind === SyntaxKind.Constructor) {
-                    let constructor = <ConstructorDeclaration>member;
-                    visitBlock(constructor.body);
+                else if (isConstructorDeclaration(member)) {
+                    visitBlock(member.body);
                 }
             }
         }
 
         function visitBlock(block?: Block) {
-            if (!block || visitedBlocks.indexOf(block) != -1) {
+            if (!block || visitedBlocks.indexOf(block) !== -1) {
                 return;
             }
             visitedBlocks.push(block);
-            for (let statement of block.statements) {
+            for (const statement of block.statements) {
                 visitStatement(statement);
             }
             visitedBlocks.pop();
@@ -634,21 +633,21 @@ namespace ts {
 
         function sortOnDependency() {
             //使用副本进行操作
-            let _sourceFiles = sourceFiles as Array<SourceFile>;
-            let _rootFileNames = rootFileNames as Array<string>;
-            let sortedFileNames = [] as string[];
+            const _sourceFiles = sourceFiles as SourceFile[];
+            const _rootFileNames = rootFileNames as string[];
+            const sortedFileNames = [] as string[];
             let circularReferences = [] as string[];
-            let pathWeightMap = createMap<number>();
-            let dtsFiles: SourceFile[] = [];
-            let tsFiles: SourceFile[] = [];
-            for (let sourceFile of _sourceFiles) {
-                let path = sourceFile.fileName;
+            const pathWeightMap = createMap<number>();
+            const dtsFiles: SourceFile[] = [];
+            const tsFiles: SourceFile[] = [];
+            for (const sourceFile of _sourceFiles) {
+                const path = sourceFile.fileName;
                 if (sourceFile.isDeclarationFile) {
                     pathWeightMap[path] = 10000;
                     dtsFiles.push(sourceFile);
                     continue;
                 }
-                let references = updatePathWeight(path, 0, [path], pathWeightMap);
+                const references = updatePathWeight(path, 0, [path], pathWeightMap);
                 if (references && references.length > 0) {
                     circularReferences = references;
                     break;
@@ -687,16 +686,16 @@ namespace ts {
                     return;
                 }
             }
-            let list = dependencyMap[path];
+            const list = dependencyMap[path];
             if (!list) {
                 return;
             }
-            for (let parentPath of list) {
-                if (references.indexOf(parentPath) != -1) {
+            for (const parentPath of list) {
+                if (references.indexOf(parentPath) !== -1) {
                     references.push(parentPath);
                     return references;
                 }
-                let result = updatePathWeight(parentPath, weight + 1, references.concat(parentPath), pathWeightMap);
+                const result = updatePathWeight(parentPath, weight + 1, references.concat(parentPath), pathWeightMap);
                 if (result) {
                     return result;
                 }

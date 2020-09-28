@@ -1999,12 +1999,6 @@ namespace ts.server {
         }
     }
 
-    /*@internal*/
-    interface SymlinkedDirectory {
-        real: string;
-        realPath: Path;
-    }
-
     /**
      * If a file is opened, the server will look for a tsconfig (or jsconfig)
      * and if successful create a ConfiguredProject for it.

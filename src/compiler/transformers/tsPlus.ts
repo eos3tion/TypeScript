@@ -83,10 +83,10 @@ namespace ts {
             if (hasSyntacticModifier(node, ModifierFlags.Ambient)) {
                 return node;
             }
-            if (node.kind === SyntaxKind.ClassDeclaration) {
-                return visitClassDeclaration(<ClassDeclaration>node);
+            if (isClassDeclaration(node)) {
+                return visitClassDeclaration(node);
             }
-            if (node.kind === SyntaxKind.ModuleDeclaration) {
+            if (isModuleDeclaration(node) || isNamespaceExportDeclaration(node)) {
                 return visitModule(<NamespaceDeclaration>node);
             }
             return node;
@@ -98,7 +98,7 @@ namespace ts {
                 return updateModuleDeclaration(node, visitModule(body));
             }
             if (isModuleBlock(body)) {
-                return updateModuleDeclaration(node, factory.updateModuleBlock(body, body.statements));
+                return updateModuleDeclaration(node, factory.updateModuleBlock(body, visitNodes(body.statements, visitStatement, isStatement)));
             }
             return node;
         }

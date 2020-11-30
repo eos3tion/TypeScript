@@ -37,7 +37,6 @@ namespace ts {
     function getScriptTransformers(compilerOptions: CompilerOptions, customTransformers?: CustomTransformers, emitOnlyDtsFiles?: boolean) {
         if (emitOnlyDtsFiles) return emptyArray;
 
-        const jsx = compilerOptions.jsx;
         const languageVersion = getEmitScriptTarget(compilerOptions);
         const moduleKind = getEmitModuleKind(compilerOptions);
         const transformers: TransformerFactory<SourceFile | Bundle>[] = [];
@@ -53,7 +52,7 @@ namespace ts {
         transformers.push(transformTypeScript);
         transformers.push(transformClassFields);
 
-        if (jsx === JsxEmit.React) {
+        if (getJSXTransformEnabled(compilerOptions)) {
             transformers.push(transformJsx);
         }
 
@@ -228,7 +227,12 @@ namespace ts {
         state = TransformationState.Initialized;
 
         // Transform each node.
-        const transformed = map(nodes, allowDtsFiles ? transformation : transformRoot);
+        const transformed: T[] = [];
+        for (const node of nodes) {
+            tracing.push(tracing.Phase.Emit, "transformNodes", node.kind === SyntaxKind.SourceFile ? { path: (node as any as SourceFile).path } : { kind: node.kind, pos: node.pos, end: node.end });
+            transformed.push((allowDtsFiles ? transformation : transformRoot)(node));
+            tracing.pop();
+        }
 
         // prevent modification of the lexical environment.
         state = TransformationState.Completed;

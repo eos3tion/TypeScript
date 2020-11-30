@@ -1,9 +1,9 @@
 namespace ts {
     // WARNING: The script `configurePrerelease.ts` uses a regexp to parse out these values.
     // If changing the text in this section, be sure to test `configurePrerelease` too.
-    export const versionMajorMinor = "4.0";
+    export const versionMajorMinor = "4.1";
     /** The version of the TypeScript compiler release */
-    export const version = "4.0.3" as string;
+    export const version = "4.1.2" as string;
 
     /**
      * Type of objects whose values are all of the same type.
@@ -105,8 +105,8 @@ namespace ts {
 
     /* @internal */
     export const enum Comparison {
-        LessThan    = -1,
-        EqualTo     = 0,
+        LessThan = -1,
+        EqualTo = 0,
         GreaterThan = 1
     }
 

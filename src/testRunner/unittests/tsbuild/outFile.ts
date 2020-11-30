@@ -669,7 +669,7 @@ ${internal} enum internalEnum { a, b, c }`);
                                 declarationMap: false,
                                 stripInternal: true,
                                 sourceMap: true,
-                                outFile: "./thirdjs/output/third-output.js"
+                                outFile: "./thirdjs/output/third-output.js",
                             },
                             references: [{ path: "../first", prepend: true }],
                             files: [sources[Project.third][Source.ts][Part.one]]

@@ -37,6 +37,9 @@ namespace ts.server.protocol {
         /* @internal */
         EmitOutput = "emit-output",
         Exit = "exit",
+        FileReferences = "fileReferences",
+        /* @internal */
+        FileReferencesFull = "fileReferences-full",
         Format = "format",
         Formatonkey = "formatonkey",
         /* @internal */
@@ -563,7 +566,8 @@ namespace ts.server.protocol {
         arguments: GetApplicableRefactorsRequestArgs;
     }
     export type GetApplicableRefactorsRequestArgs = FileLocationOrRangeRequestArgs & {
-        triggerReason?: RefactorTriggerReason
+        triggerReason?: RefactorTriggerReason;
+        kind?: string;
     };
 
     export type RefactorTriggerReason = "implicit" | "invoked";
@@ -623,6 +627,11 @@ namespace ts.server.protocol {
          * the current context.
          */
         notApplicableReason?: string;
+
+        /**
+         * The hierarchical dotted name of the refactor action.
+         */
+        kind?: string;
     }
 
     export interface GetEditsForRefactorRequest extends Request {
@@ -834,7 +843,6 @@ namespace ts.server.protocol {
     /**
      * A request to get encoded semantic classifications for a span in the file
      */
-    /** @internal */
     export interface EncodedSemanticClassificationsRequest extends FileRequest {
         arguments: EncodedSemanticClassificationsRequestArgs;
     }
@@ -842,7 +850,6 @@ namespace ts.server.protocol {
     /**
      * Arguments for EncodedSemanticClassificationsRequest request.
      */
-    /** @internal */
     export interface EncodedSemanticClassificationsRequestArgs extends FileRequestArgs {
         /**
          * Start position of the span.
@@ -852,8 +859,25 @@ namespace ts.server.protocol {
          * Length of the span.
          */
         length: number;
+        /**
+         * Optional parameter for the semantic highlighting response, if absent it
+         * defaults to "original".
+         */
+        format?: "original" | "2020"
     }
 
+    /** The response for a EncodedSemanticClassificationsRequest */
+    export interface EncodedSemanticClassificationsResponse extends Response {
+        body?: EncodedSemanticClassificationsResponseBody
+    }
+
+    /**
+     * Implementation response message. Gives series of text spans depending on the format ar.
+     */
+    export interface EncodedSemanticClassificationsResponseBody {
+        endOfLineState: EndOfLineState;
+        spans: number[];
+    }
     /**
      * Arguments in document highlight request; include: filesToSearch, file,
      * line, offset.
@@ -1150,6 +1174,25 @@ namespace ts.server.protocol {
      */
     export interface ReferencesResponse extends Response {
         body?: ReferencesResponseBody;
+    }
+
+    export interface FileReferencesRequest extends FileRequest {
+        command: CommandTypes.FileReferences;
+    }
+
+    export interface FileReferencesResponseBody {
+        /**
+         * The file locations referencing the symbol.
+         */
+        refs: readonly ReferencesResponseItem[];
+        /**
+         * The name of the symbol.
+         */
+        symbolName: string;
+    }
+
+    export interface FileReferencesResponse extends Response {
+        body?: FileReferencesResponseBody;
     }
 
     /**
@@ -1509,6 +1552,8 @@ namespace ts.server.protocol {
         watchDirectory?: WatchDirectoryKind | ts.WatchDirectoryKind;
         fallbackPolling?: PollingWatchKind | ts.PollingWatchKind;
         synchronousWatchDirectory?: boolean;
+        excludeDirectories?: string[];
+        excludeFiles?: string[];
         [option: string]: CompilerOptionsValue | undefined;
     }
 
@@ -3229,7 +3274,7 @@ namespace ts.server.protocol {
          * values, with insertion text to replace preceding `.` tokens with `?.`.
          */
         readonly includeAutomaticOptionalChainCompletions?: boolean;
-        readonly importModuleSpecifierPreference?: "auto" | "relative" | "non-relative";
+        readonly importModuleSpecifierPreference?: "shortest" | "project-relative" | "relative" | "non-relative";
         /** Determines whether we import `foo/index.ts` as "foo", "foo/index", or "foo/index.js" */
         readonly importModuleSpecifierEnding?: "auto" | "minimal" | "index" | "js";
         readonly allowTextChangesInNewFiles?: boolean;
@@ -3238,6 +3283,8 @@ namespace ts.server.protocol {
         readonly provideRefactorNotApplicableReason?: boolean;
         readonly allowRenameOfImportPath?: boolean;
         readonly includePackageJsonAutoImports?: "auto" | "on" | "off";
+
+        readonly generateReturnInDocTemplate?: boolean;
     }
 
     export interface CompilerOptions {
@@ -3352,5 +3399,33 @@ namespace ts.server.protocol {
         ES2019 = "ES2019",
         ES2020 = "ES2020",
         ESNext = "ESNext"
+    }
+
+    export const enum ClassificationType {
+        comment = 1,
+        identifier = 2,
+        keyword = 3,
+        numericLiteral = 4,
+        operator = 5,
+        stringLiteral = 6,
+        regularExpressionLiteral = 7,
+        whiteSpace = 8,
+        text = 9,
+        punctuation = 10,
+        className = 11,
+        enumName = 12,
+        interfaceName = 13,
+        moduleName = 14,
+        typeParameterName = 15,
+        typeAliasName = 16,
+        parameterName = 17,
+        docCommentTagName = 18,
+        jsxOpenTagName = 19,
+        jsxCloseTagName = 20,
+        jsxSelfClosingTagName = 21,
+        jsxAttribute = 22,
+        jsxText = 23,
+        jsxAttributeStringLiteralValue = 24,
+        bigintLiteral = 25,
     }
 }

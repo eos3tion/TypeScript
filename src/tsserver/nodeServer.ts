@@ -233,7 +233,7 @@ namespace ts.server {
 
         // Override sys.write because fs.writeSync is not reliable on Node 4
         sys.write = (s: string) => writeMessage(sys.bufferFrom!(s, "utf8") as globalThis.Buffer);
-         // REVIEW: for now this implementation uses polling.
+        // REVIEW: for now this implementation uses polling.
         // The advantage of polling is that it works reliably
         // on all os and with network mounted files.
         // For 90 referenced files, the average time to detect
@@ -256,7 +256,7 @@ namespace ts.server {
         /* eslint-enable no-restricted-globals */
 
         if (typeof global !== "undefined" && global.gc) {
-            sys.gc = () => global.gc();
+            sys.gc = global.gc.bind(global);
         }
 
         sys.require = (initialDir: string, moduleName: string): RequireResult => {

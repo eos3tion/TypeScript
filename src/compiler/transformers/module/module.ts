@@ -1,5 +1,6 @@
 /*@internal*/
 namespace ts {
+
     export function transformModule(context: TransformationContext) {
         interface AsynchronousDependencies {
             aliasedModuleNames: Expression[];
@@ -1762,11 +1763,9 @@ namespace ts {
                 if (externalHelpersModuleName) {
                     return factory.createPropertyAccessExpression(externalHelpersModuleName, node);
                 }
-
                 return node;
             }
-
-            if (!(isGeneratedIdentifier(node) && !(node.autoGenerateFlags & GeneratedIdentifierFlags.AllowNameSubstitution)) && !isLocalName(node)) {
+            else if (!(isGeneratedIdentifier(node) && !(node.autoGenerateFlags & GeneratedIdentifierFlags.AllowNameSubstitution)) && !isLocalName(node)) {
                 const exportContainer = resolver.getReferencedExportContainer(node, isExportName(node));
                 if (exportContainer && exportContainer.kind === SyntaxKind.SourceFile) {
                     return setTextRange(
@@ -1777,7 +1776,6 @@ namespace ts {
                         /*location*/ node
                     );
                 }
-
                 const importDeclaration = resolver.getReferencedImportDeclaration(node);
                 if (importDeclaration) {
                     if (isImportClause(importDeclaration)) {
@@ -1864,17 +1862,22 @@ namespace ts {
                 if (exportedNames) {
                     let expression: Expression = node.kind === SyntaxKind.PostfixUnaryExpression
                         ? setTextRange(
-                            factory.createBinaryExpression(
-                                node.operand,
-                                factory.createToken(node.operator === SyntaxKind.PlusPlusToken ? SyntaxKind.PlusEqualsToken : SyntaxKind.MinusEqualsToken),
-                                factory.createNumericLiteral(1)
+                            factory.createPrefixUnaryExpression(
+                                node.operator,
+                                node.operand
                             ),
                             /*location*/ node)
                         : node;
                     for (const exportName of exportedNames) {
                         // Mark the node to prevent triggering this rule again.
                         noSubstitution[getNodeId(expression)] = true;
-                        expression = factory.createParenthesizedExpression(createExportExpression(exportName, expression));
+                        expression = createExportExpression(exportName, expression);
+                    }
+                    if (node.kind === SyntaxKind.PostfixUnaryExpression) {
+                        noSubstitution[getNodeId(expression)] = true;
+                        expression = node.operator === SyntaxKind.PlusPlusToken
+                            ? factory.createSubtract(expression, factory.createNumericLiteral(1))
+                            : factory.createAdd(expression, factory.createNumericLiteral(1));
                     }
                     return expression;
                 }
